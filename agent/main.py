@@ -455,6 +455,59 @@ class PydanticAIAgent:
             logger.error(f"Error processing message: {e}")
             return f"I encountered an error: {str(e)}"
 
+    async def process_message_stream(self, user_input: str):
+        """
+        Process a user message and stream the agent response token by token
+
+        This method is used by the FastAPI streaming endpoint to provide
+        real-time responses using Server-Sent Events (SSE).
+
+        Args:
+            user_input: User message
+
+        Yields:
+            Individual tokens of the agent's response
+        """
+        try:
+            # Sanitize input
+            user_input = sanitize_input(user_input)
+
+            # Validate input with guardrails - disabled for now
+            # if not self._validate_with_guardrails(user_input):
+            #     yield "I'm sorry, but I cannot process that message."
+            #     return
+
+            # Get memory context
+            memory_context = self._get_memory_context(user_input)
+
+            # Prepare the full message with context
+            full_message = user_input
+            if memory_context:
+                full_message = f"{memory_context}\n\n{user_input}"
+
+            logger.info(f"Streaming response for message: {user_input[:50]}...")
+
+            # Stream response from agent
+            full_response = ""
+            async with self.agent.run_stream(full_message) as result:
+                # Stream text deltas (token by token)
+                async for text in result.stream_text(delta=True):
+                    full_response += text
+                    yield text  # Yield each token as it arrives
+
+            logger.info(f"Stream completed. Total length: {len(full_response)}")
+
+            # Validate response with guardrails - disabled for now
+            # if not self._validate_with_guardrails(full_response):
+            #     yield " [Response was filtered for safety]"
+
+            # Save complete response to memory
+            self._save_to_memory(user_input, full_response)
+
+        except Exception as e:
+            logger.error(f"Error during streaming: {e}", exc_info=True)
+            yield f"Error: {str(e)}"
+
     async def run_conversation_loop(self) -> None:
         """
         Run the main conversation loop

@@ -32,6 +32,37 @@ services:
     tty: true
     command: python main.py
 
+  # FastAPI Streaming API
+  api:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile.api
+    container_name: pydantic-api
+    env_file:
+      - .env
+    environment:
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.97:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1:8b}
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_ENABLED=${LANGFUSE_ENABLED}
+      - AGENT_PROMPT_TEMPLATE=${AGENT_PROMPT_TEMPLATE:-GENERAL_ASSISTANT}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENAI_GRAPH_API_KEY=${OPENAI_GRAPH_API_KEY}
+    depends_on:
+      - qdrant
+    networks:
+      - agent-network
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./agent:/app
+    command: uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+
   # Qdrant Vector Database for Mem0
   qdrant:
     image: qdrant/qdrant:latest
