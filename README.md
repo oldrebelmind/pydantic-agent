@@ -9,7 +9,7 @@ A production-ready AI agent built with Pydantic AI, featuring long-term memory, 
 - **📊 Observability** - Complete trace logging via Langfuse
 - **🛡️ Safety Guardrails** - Content validation using Guardrails AI
 - **🔒 Security** - Snyk MCP integration for security scanning
-- **🏠 Local LLM** - Powered by self-hosted Ollama (llama3.2)
+- **🏠 Local LLM** - Powered by self-hosted Ollama (llama3.1:8b)
 
 ## Architecture
 
@@ -17,12 +17,12 @@ A production-ready AI agent built with Pydantic AI, featuring long-term memory, 
 ┌─────────────────────────────────────────────────┐
 │            Pydantic AI Agent                    │
 │                                                 │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
-│  │  Mem0    │  │ Langfuse │  │Guardrails│     │
-│  │ Memory   │  │   Track  │  │   Check  │     │
-│  └────┬─────┘  └────┬─────┘  └──────────┘     │
-│       │             │                          │
-└───────┼─────────────┼──────────────────────────┘
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
+│  │  Mem0    │  │ Langfuse │  │Guardrails│       │
+│  │ Memory   │  │   Track  │  │   Check  │       │
+│  └────┬─────┘  └────┬─────┘  └──────────┘       │
+│       │             │                           │
+└───────┼─────────────┼──────────────────────────-┘
         │             │
         ▼             ▼
    ┌─────────┐   ┌──────────┐
@@ -62,7 +62,7 @@ A production-ready AI agent built with Pydantic AI, featuring long-term memory, 
    ```
 
 4. **Access Langfuse dashboard:**
-   - Open http://localhost:3000
+   - Open http://localhost:4000
    - Create an account
    - Copy API keys to `.env`
    - Restart agent: `docker-compose restart agent`
@@ -96,7 +96,7 @@ AGENT_PROMPT_TEMPLATE=CODE_HELPER
 
 - **Agent**: Running in Docker container
 - **Qdrant Dashboard**: http://localhost:6333/dashboard
-- **Langfuse Dashboard**: http://localhost:3000
+- **Langfuse Dashboard**: http://localhost:4000
 
 ## Development
 
