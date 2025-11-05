@@ -169,9 +169,6 @@ async def chat_stream(request: ChatRequest):
                 event_data = json.dumps({'token': token})
                 yield f"data: {event_data}\n\n"
 
-                # Allow other tasks to run (prevents blocking)
-                await asyncio.sleep(0)
-
             # Send completion event
             logger.info("Stream completed successfully")
             yield f"data: {json.dumps({'done': True})}\n\n"

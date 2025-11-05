@@ -8,7 +8,7 @@ openai>=1.54.4
 
 # Memory Management
 mem0ai[graph]>=1.0.0
-qdrant-client>=1.12.1
+qdrant-client==1.12.1
 ollama>=0.1.0
 neo4j>=5.14.0
 langchain-neo4j>=0.1.0
@@ -25,3 +25,5 @@ python-multipart>=0.0.9
 # Utilities
 python-dotenv>=1.1.0
 rich>=13.9.4
+ntplib>=0.4.0
+pytz>=2024.1
