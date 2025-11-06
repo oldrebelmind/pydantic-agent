@@ -518,15 +518,34 @@ class PydanticAIAgent:
             logger.warning(f"Failed to sync with NTP server: {e}. Using system time as fallback.")
             return None
 
-    def _get_user_timezone(self) -> str:
+    def _get_user_timezone(self, location_context: dict | None = None) -> str:
         """
-        Retrieve user's timezone preference from Mem0 memory.
-        Can detect both explicit timezone strings (e.g., "America/New_York")
-        and city names (e.g., "Indianapolis", "New York").
+        Retrieve user's timezone preference from IP geolocation or Mem0 memory.
+
+        Priority:
+        1. IP geolocation timezone (from location_context)
+        2. Explicit timezone strings from memory (e.g., "America/New_York")
+        3. City names from memory (e.g., "Indianapolis", "New York")
+
+        Args:
+            location_context: Optional location data from IP geolocation
+                             {city, state, country, timezone, latitude, longitude}
 
         Returns:
             Timezone string (e.g., 'America/New_York') or 'UTC' if not found
         """
+        # PRIORITY 1: Check location_context from IP geolocation first
+        if location_context and location_context.get('timezone'):
+            timezone_str = location_context['timezone']
+            try:
+                # Validate the timezone
+                pytz.timezone(timezone_str)
+                logger.info(f"Using timezone from IP geolocation: {timezone_str}")
+                return timezone_str
+            except pytz.exceptions.UnknownTimeZoneError:
+                logger.warning(f"Invalid timezone from IP geolocation: {timezone_str}, falling back to memory")
+
+        # PRIORITY 2 & 3: Fall back to memory-based timezone detection
         if not self.memory:
             return 'UTC'
 
@@ -880,7 +899,7 @@ class PydanticAIAgent:
             logger.error(f"Error processing message: {e}")
             return f"I encountered an error: {str(e)}"
 
-    async def process_message_stream(self, user_input: str):
+    async def process_message_stream(self, user_input: str, location_context: dict | None = None):
         """
         Process a user message and stream the agent response token by token
 
@@ -889,6 +908,8 @@ class PydanticAIAgent:
 
         Args:
             user_input: User message
+            location_context: Optional location data from IP geolocation
+                             {city, state, country, timezone, latitude, longitude}
 
         Yields:
             Individual tokens of the agent's response
@@ -902,8 +923,8 @@ class PydanticAIAgent:
             #     yield "I'm sorry, but I cannot process that message."
             #     return
 
-            # Get user's timezone from memory
-            user_timezone = self._get_user_timezone()
+            # Get user's timezone - prioritize location_context, fallback to memory
+            user_timezone = self._get_user_timezone(location_context)
 
             # Get current time context (fresh for this message, in user's timezone)
             time_context = self._get_current_time_context(user_timezone)

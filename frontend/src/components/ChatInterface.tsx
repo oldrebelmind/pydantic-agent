@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send, Loader2 } from "lucide-react";
-import { ChatMessage, streamChatMessage } from "@/lib/streaming";
+import { ChatMessage, streamChatMessage, LocationContext } from "@/lib/streaming";
+import { fetchGeolocation, GeolocationData } from "@/lib/geolocation";
 import MessageBubble from "./MessageBubble";
 import StreamingMessage from "./StreamingMessage";
 
@@ -16,9 +17,34 @@ export default function ChatInterface() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [locationContext, setLocationContext] = useState<LocationContext | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const streamingContentRef = useRef("");
+
+  // Fetch user's location on component mount
+  useEffect(() => {
+    const loadLocation = async () => {
+      const geoData: GeolocationData | null = await fetchGeolocation();
+
+      if (geoData) {
+        // Convert GeolocationData to LocationContext
+        const context: LocationContext = {
+          city: geoData.city,
+          state: geoData.state_prov,
+          country: geoData.country_name,
+          timezone: geoData.timezone?.name,
+          latitude: geoData.latitude,
+          longitude: geoData.longitude,
+        };
+
+        setLocationContext(context);
+        console.log('[CHAT] Location context loaded:', context);
+      }
+    };
+
+    loadLocation();
+  }, []);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -75,7 +101,9 @@ export default function ChatInterface() {
         setStreamingContent("");
         streamingContentRef.current = "";
         inputRef.current?.focus();
-      }
+      },
+      // locationContext
+      locationContext
     );
   };
 
