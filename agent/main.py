@@ -59,7 +59,13 @@ logger = setup_logging(config.LOG_LEVEL)
 # Custom fact extraction prompt for Mem0
 # Note: This works best with larger models (8B+). With smaller models like llama3.2 (3B),
 # some facts from assistant messages may be incorrectly extracted.
-CUSTOM_FACT_EXTRACTION_PROMPT = """You extract facts from the user line only.
+CUSTOM_FACT_EXTRACTION_PROMPT = """You extract facts from the user line only. Extract ALL specific details separately.
+
+IMPORTANT:
+- Extract location details with full specificity (city, neighborhood, area, side of town)
+- Break down compound statements into separate facts
+- Preserve exact details like addresses, neighborhoods, districts
+- Extract preferences, habits, and contextual information
 
 Format:
 user: <user message>
@@ -81,6 +87,18 @@ user: I'm travelling to Paris next week
 assistant: Paris is beautiful!
 {"facts": ["Travelling to Paris", "Leaving next week"]}
 
+user: I live on the north side of Indianapolis
+assistant: That's a nice area!
+{"facts": ["Lives in Indianapolis", "Lives on north side of Indianapolis"]}
+
+user: I live in San Francisco, specifically in the Mission District
+assistant: The Mission is vibrant!
+{"facts": ["Lives in San Francisco", "Lives in Mission District"]}
+
+user: I usually work from my office downtown near 5th and Main
+assistant: That's convenient!
+{"facts": ["Works from office", "Office is downtown", "Office near 5th and Main"]}
+
 user: Where am I going?
 assistant: You're going to Spain.
 {"facts": []}
@@ -88,6 +106,10 @@ assistant: You're going to Spain.
 user: I'm a data scientist
 assistant: Data science is interesting!
 {"facts": ["Works as data scientist"]}
+
+user: I prefer working in the mornings
+assistant: Morning work is productive!
+{"facts": ["Prefers working in mornings"]}
 
 Return: {"facts": [...]}
 """
@@ -136,6 +158,165 @@ Output:
 }
 
 Extract all entities and relationships from the conversation.
+"""
+
+CUSTOM_UPDATE_MEMORY_PROMPT = """You are a smart memory manager which controls the memory of a system.
+You can perform four operations: (1) add into the memory, (2) update the memory, (3) delete from the memory, and (4) no change.
+
+Based on the above four operations, the memory will change.
+
+Compare newly retrieved facts with the existing memory. For each new fact, decide whether to:
+- ADD: Add it to the memory as a new element
+- UPDATE: Update an existing memory element
+- DELETE: Delete an existing memory element
+- NONE: Make no change (if the fact is already present or irrelevant)
+
+**CRITICAL RULES FOR PRESERVING DETAIL:**
+1. ALWAYS keep the fact with MORE specificity and detail
+2. NEVER simplify or generalize location information (neighborhoods, sides of town, districts, addresses)
+3. When comparing similar facts, keep the one that contains MORE information, not less
+4. "Lives on north side of Indianapolis" is MORE detailed than "Lives in Indianapolis" - KEEP THE DETAILED VERSION
+5. "Office near 5th and Main" is MORE detailed than "Office downtown" - KEEP THE DETAILED VERSION
+6. If both old and new facts have different details, COMBINE them into one fact with all details
+
+There are specific guidelines to select which operation to perform:
+
+1. **Add**: If the retrieved facts contain new information not present in the memory, then you have to add it by generating a new ID in the id field.
+- **Example**:
+    - Old Memory:
+        [
+            {
+                "id" : "0",
+                "text" : "User is a software engineer"
+            }
+        ]
+    - Retrieved facts: ["Name is John"]
+    - New Memory:
+        {
+            "memory" : [
+                {
+                    "id" : "0",
+                    "text" : "User is a software engineer",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "1",
+                    "text" : "Name is John",
+                    "event" : "ADD"
+                }
+            ]
+
+        }
+
+2. **Update**: If the retrieved facts contain information that is already present in the memory but the information is totally different, then you have to update it.
+**CRITICAL**: If the retrieved fact contains information that conveys the same thing as the elements present in the memory, then you MUST keep the fact which has the MOST SPECIFIC information and detail.
+Example (a) -- if the memory contains "User likes to play cricket" and the retrieved fact is "Loves to play cricket with friends", then update the memory with the retrieved facts because it adds "with friends".
+Example (b) -- if the memory contains "Likes cheese pizza" and the retrieved fact is "Loves cheese pizza", then you do not need to update it because they convey the same information with the same level of detail.
+**Example (c) -- if the memory contains "Lives on north side of Indianapolis" and the retrieved fact is "Lives in Indianapolis", DO NOT UPDATE because the existing memory has MORE detail (specifies "north side"). Keep the existing detailed memory.**
+**Example (d) -- if the memory contains "Lives in Indianapolis" and the retrieved fact is "Lives on north side of Indianapolis", UPDATE to the more detailed version because it adds neighborhood specificity.**
+If the direction is to update the memory, then you have to update it.
+Please keep in mind while updating you have to keep the same ID.
+Please note to return the IDs in the output from the input IDs only and do not generate any new ID.
+- **Example**:
+    - Old Memory:
+        [
+            {
+                "id" : "0",
+                "text" : "Lives on north side of Indianapolis"
+            },
+            {
+                "id" : "1",
+                "text" : "User is a software engineer"
+            },
+            {
+                "id" : "2",
+                "text" : "User likes to play cricket"
+            }
+        ]
+    - Retrieved facts: ["Lives in Indianapolis", "Loves to play cricket with friends"]
+    - New Memory:
+        {
+        "memory" : [
+                {
+                    "id" : "0",
+                    "text" : "Lives on north side of Indianapolis",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "1",
+                    "text" : "User is a software engineer",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "2",
+                    "text" : "Loves to play cricket with friends",
+                    "event" : "UPDATE",
+                    "old_memory" : "User likes to play cricket"
+                }
+            ]
+        }
+
+
+3. **Delete**: If the retrieved facts contain information that contradicts the information present in the memory, then you have to delete it. Or if the direction is to delete the memory, then you have to delete it.
+Please note to return the IDs in the output from the input IDs only and do not generate any new ID.
+- **Example**:
+    - Old Memory:
+        [
+            {
+                "id" : "0",
+                "text" : "Name is John"
+            },
+            {
+                "id" : "1",
+                "text" : "Loves cheese pizza"
+            }
+        ]
+    - Retrieved facts: ["Dislikes cheese pizza"]
+    - New Memory:
+        {
+        "memory" : [
+                {
+                    "id" : "0",
+                    "text" : "Name is John",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "1",
+                    "text" : "Loves cheese pizza",
+                    "event" : "DELETE"
+                }
+        ]
+        }
+
+4. **No Change**: If the retrieved facts contain information that is already present in the memory, then you do not need to make any changes.
+- **Example**:
+    - Old Memory:
+        [
+            {
+                "id" : "0",
+                "text" : "Name is John"
+            },
+            {
+                "id" : "1",
+                "text" : "Loves cheese pizza"
+            }
+        ]
+    - Retrieved facts: ["Name is John"]
+    - New Memory:
+        {
+        "memory" : [
+                {
+                    "id" : "0",
+                    "text" : "Name is John",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "1",
+                    "text" : "Loves cheese pizza",
+                    "event" : "NONE"
+                }
+            ]
+        }
 """
 
 
@@ -238,6 +419,7 @@ class PydanticAIAgent:
                     "custom_prompt": CUSTOM_ENTITY_EXTRACTION_PROMPT,
                 },
                 "custom_fact_extraction_prompt": CUSTOM_FACT_EXTRACTION_PROMPT,
+                "custom_update_memory_prompt": CUSTOM_UPDATE_MEMORY_PROMPT,
             }
 
             memory = Memory.from_config(memory_config)
