@@ -201,11 +201,12 @@ class PydanticAIAgent:
                     }
                 },
                 "vector_store": {
-                    "provider": "qdrant",
+                    "provider": "milvus",
                     "config": {
-                        "host": config.QDRANT_HOST,
-                        "port": config.QDRANT_PORT,
-                        "collection_name": config.QDRANT_COLLECTION,
+                        "url": f"http://{config.MILVUS_HOST}:{config.MILVUS_PORT}",
+                        "token": "",  # Empty token for local Milvus standalone
+                        "collection_name": config.MILVUS_COLLECTION,
+                        "embedding_model_dims": 768,
                     }
                 },
                 "embedder": {
@@ -230,8 +231,8 @@ class PydanticAIAgent:
                             "model": "gpt-4o-mini",
                             "temperature": 0,
                             "max_tokens": 2000,
-                            "api_key": config.OPENAI_GRAPH_API_KEY,  # Use separate API key for graph extraction
-                            "openai_base_url": "https://api.openai.com/v1",  # Explicit OpenAI API endpoint
+                            "api_key": config.OPENAI_GRAPH_API_KEY,
+                            "openai_base_url": "https://api.openai.com/v1",
                         }
                     },
                     "custom_prompt": CUSTOM_ENTITY_EXTRACTION_PROMPT,
@@ -240,7 +241,7 @@ class PydanticAIAgent:
             }
 
             memory = Memory.from_config(memory_config)
-            logger.info("Mem0 initialized successfully with Qdrant, Neo4j GraphRAG, and Ollama embeddings")
+            logger.info("Mem0 initialized successfully with Milvus, Neo4j GraphRAG, and Ollama embeddings (GitHub main)")
             return memory
 
         except Exception as e:
