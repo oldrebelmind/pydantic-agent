@@ -6,6 +6,14 @@ Main application entry point.
 import asyncio
 from typing import Optional
 import httpx
+import re
+from datetime import datetime
+import pytz
+try:
+    import ntplib
+except ImportError:
+    ntplib = None  # NTP sync will be disabled if ntplib not available
+
 from pydantic_ai import Agent
 try:
     from pydantic_ai.models.openai import OpenAIChatModel as OpenAIModel
@@ -51,7 +59,13 @@ logger = setup_logging(config.LOG_LEVEL)
 # Custom fact extraction prompt for Mem0
 # Note: This works best with larger models (8B+). With smaller models like llama3.2 (3B),
 # some facts from assistant messages may be incorrectly extracted.
-CUSTOM_FACT_EXTRACTION_PROMPT = """You extract facts from the user line only.
+CUSTOM_FACT_EXTRACTION_PROMPT = """You extract facts from the user line only. Extract ALL specific details separately.
+
+IMPORTANT:
+- Extract location details with full specificity (city, neighborhood, area, side of town)
+- Break down compound statements into separate facts
+- Preserve exact details like addresses, neighborhoods, districts
+- Extract preferences, habits, and contextual information
 
 Format:
 user: <user message>
@@ -73,6 +87,18 @@ user: I'm travelling to Paris next week
 assistant: Paris is beautiful!
 {"facts": ["Travelling to Paris", "Leaving next week"]}
 
+user: I live on the north side of Indianapolis
+assistant: That's a nice area!
+{"facts": ["Lives in Indianapolis", "Lives on north side of Indianapolis"]}
+
+user: I live in San Francisco, specifically in the Mission District
+assistant: The Mission is vibrant!
+{"facts": ["Lives in San Francisco", "Lives in Mission District"]}
+
+user: I usually work from my office downtown near 5th and Main
+assistant: That's convenient!
+{"facts": ["Works from office", "Office is downtown", "Office near 5th and Main"]}
+
 user: Where am I going?
 assistant: You're going to Spain.
 {"facts": []}
@@ -80,6 +106,10 @@ assistant: You're going to Spain.
 user: I'm a data scientist
 assistant: Data science is interesting!
 {"facts": ["Works as data scientist"]}
+
+user: I prefer working in the mornings
+assistant: Morning work is productive!
+{"facts": ["Prefers working in mornings"]}
 
 Return: {"facts": [...]}
 """
@@ -128,6 +158,165 @@ Output:
 }
 
 Extract all entities and relationships from the conversation.
+"""
+
+CUSTOM_UPDATE_MEMORY_PROMPT = """You are a smart memory manager which controls the memory of a system.
+You can perform four operations: (1) add into the memory, (2) update the memory, (3) delete from the memory, and (4) no change.
+
+Based on the above four operations, the memory will change.
+
+Compare newly retrieved facts with the existing memory. For each new fact, decide whether to:
+- ADD: Add it to the memory as a new element
+- UPDATE: Update an existing memory element
+- DELETE: Delete an existing memory element
+- NONE: Make no change (if the fact is already present or irrelevant)
+
+**CRITICAL RULES FOR PRESERVING DETAIL:**
+1. ALWAYS keep the fact with MORE specificity and detail
+2. NEVER simplify or generalize location information (neighborhoods, sides of town, districts, addresses)
+3. When comparing similar facts, keep the one that contains MORE information, not less
+4. "Lives on north side of Indianapolis" is MORE detailed than "Lives in Indianapolis" - KEEP THE DETAILED VERSION
+5. "Office near 5th and Main" is MORE detailed than "Office downtown" - KEEP THE DETAILED VERSION
+6. If both old and new facts have different details, COMBINE them into one fact with all details
+
+There are specific guidelines to select which operation to perform:
+
+1. **Add**: If the retrieved facts contain new information not present in the memory, then you have to add it by generating a new ID in the id field.
+- **Example**:
+    - Old Memory:
+        [
+            {
+                "id" : "0",
+                "text" : "User is a software engineer"
+            }
+        ]
+    - Retrieved facts: ["Name is John"]
+    - New Memory:
+        {
+            "memory" : [
+                {
+                    "id" : "0",
+                    "text" : "User is a software engineer",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "1",
+                    "text" : "Name is John",
+                    "event" : "ADD"
+                }
+            ]
+
+        }
+
+2. **Update**: If the retrieved facts contain information that is already present in the memory but the information is totally different, then you have to update it.
+**CRITICAL**: If the retrieved fact contains information that conveys the same thing as the elements present in the memory, then you MUST keep the fact which has the MOST SPECIFIC information and detail.
+Example (a) -- if the memory contains "User likes to play cricket" and the retrieved fact is "Loves to play cricket with friends", then update the memory with the retrieved facts because it adds "with friends".
+Example (b) -- if the memory contains "Likes cheese pizza" and the retrieved fact is "Loves cheese pizza", then you do not need to update it because they convey the same information with the same level of detail.
+**Example (c) -- if the memory contains "Lives on north side of Indianapolis" and the retrieved fact is "Lives in Indianapolis", DO NOT UPDATE because the existing memory has MORE detail (specifies "north side"). Keep the existing detailed memory.**
+**Example (d) -- if the memory contains "Lives in Indianapolis" and the retrieved fact is "Lives on north side of Indianapolis", UPDATE to the more detailed version because it adds neighborhood specificity.**
+If the direction is to update the memory, then you have to update it.
+Please keep in mind while updating you have to keep the same ID.
+Please note to return the IDs in the output from the input IDs only and do not generate any new ID.
+- **Example**:
+    - Old Memory:
+        [
+            {
+                "id" : "0",
+                "text" : "Lives on north side of Indianapolis"
+            },
+            {
+                "id" : "1",
+                "text" : "User is a software engineer"
+            },
+            {
+                "id" : "2",
+                "text" : "User likes to play cricket"
+            }
+        ]
+    - Retrieved facts: ["Lives in Indianapolis", "Loves to play cricket with friends"]
+    - New Memory:
+        {
+        "memory" : [
+                {
+                    "id" : "0",
+                    "text" : "Lives on north side of Indianapolis",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "1",
+                    "text" : "User is a software engineer",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "2",
+                    "text" : "Loves to play cricket with friends",
+                    "event" : "UPDATE",
+                    "old_memory" : "User likes to play cricket"
+                }
+            ]
+        }
+
+
+3. **Delete**: If the retrieved facts contain information that contradicts the information present in the memory, then you have to delete it. Or if the direction is to delete the memory, then you have to delete it.
+Please note to return the IDs in the output from the input IDs only and do not generate any new ID.
+- **Example**:
+    - Old Memory:
+        [
+            {
+                "id" : "0",
+                "text" : "Name is John"
+            },
+            {
+                "id" : "1",
+                "text" : "Loves cheese pizza"
+            }
+        ]
+    - Retrieved facts: ["Dislikes cheese pizza"]
+    - New Memory:
+        {
+        "memory" : [
+                {
+                    "id" : "0",
+                    "text" : "Name is John",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "1",
+                    "text" : "Loves cheese pizza",
+                    "event" : "DELETE"
+                }
+        ]
+        }
+
+4. **No Change**: If the retrieved facts contain information that is already present in the memory, then you do not need to make any changes.
+- **Example**:
+    - Old Memory:
+        [
+            {
+                "id" : "0",
+                "text" : "Name is John"
+            },
+            {
+                "id" : "1",
+                "text" : "Loves cheese pizza"
+            }
+        ]
+    - Retrieved facts: ["Name is John"]
+    - New Memory:
+        {
+        "memory" : [
+                {
+                    "id" : "0",
+                    "text" : "Name is John",
+                    "event" : "NONE"
+                },
+                {
+                    "id" : "1",
+                    "text" : "Loves cheese pizza",
+                    "event" : "NONE"
+                }
+            ]
+        }
 """
 
 
@@ -193,11 +382,12 @@ class PydanticAIAgent:
                     }
                 },
                 "vector_store": {
-                    "provider": "qdrant",
+                    "provider": "milvus",
                     "config": {
-                        "host": config.QDRANT_HOST,
-                        "port": config.QDRANT_PORT,
-                        "collection_name": config.QDRANT_COLLECTION,
+                        "url": f"http://{config.MILVUS_HOST}:{config.MILVUS_PORT}",
+                        "token": "",  # Empty token for local Milvus standalone
+                        "collection_name": config.MILVUS_COLLECTION,
+                        "embedding_model_dims": 768,
                     }
                 },
                 "embedder": {
@@ -222,17 +412,18 @@ class PydanticAIAgent:
                             "model": "gpt-4o-mini",
                             "temperature": 0,
                             "max_tokens": 2000,
-                            "api_key": config.OPENAI_GRAPH_API_KEY,  # Use separate API key for graph extraction
-                            "openai_base_url": "https://api.openai.com/v1",  # Explicit OpenAI API endpoint
+                            "api_key": config.OPENAI_GRAPH_API_KEY,
+                            "openai_base_url": "https://api.openai.com/v1",
                         }
                     },
                     "custom_prompt": CUSTOM_ENTITY_EXTRACTION_PROMPT,
                 },
                 "custom_fact_extraction_prompt": CUSTOM_FACT_EXTRACTION_PROMPT,
+                "custom_update_memory_prompt": CUSTOM_UPDATE_MEMORY_PROMPT,
             }
 
             memory = Memory.from_config(memory_config)
-            logger.info("Mem0 initialized successfully with Qdrant, Neo4j GraphRAG, and Ollama embeddings")
+            logger.info("Mem0 initialized successfully with Milvus, Neo4j GraphRAG, and Ollama embeddings (GitHub main)")
             return memory
 
         except Exception as e:
@@ -299,6 +490,195 @@ class PydanticAIAgent:
     #         logger.error(f"Failed to initialize Guardrails: {e}")
     #         print_system_message(f"Warning: Guardrails unavailable - {e}", "yellow")
     #         return None
+
+    def _get_ntp_time(self) -> Optional[float]:
+        """
+        Get current time from NTP server (us.pool.ntp.org).
+
+        Returns:
+            Unix timestamp from NTP server, or None if NTP query fails
+        """
+        if ntplib is None:
+            logger.warning("ntplib not available. Using system time as fallback.")
+            return None
+
+        try:
+            ntp_client = ntplib.NTPClient()
+
+            # Query US NTP pool with 3 second timeout
+            response = ntp_client.request('us.pool.ntp.org', version=3, timeout=3)
+
+            # Get the NTP time
+            ntp_time = response.tx_time
+
+            logger.info(f"Successfully synced with NTP server us.pool.ntp.org")
+            return ntp_time
+
+        except Exception as e:
+            logger.warning(f"Failed to sync with NTP server: {e}. Using system time as fallback.")
+            return None
+
+    def _get_user_timezone(self) -> str:
+        """
+        Retrieve user's timezone preference from Mem0 memory.
+        Can detect both explicit timezone strings (e.g., "America/New_York")
+        and city names (e.g., "Indianapolis", "New York").
+
+        Returns:
+            Timezone string (e.g., 'America/New_York') or 'UTC' if not found
+        """
+        if not self.memory:
+            return 'UTC'
+
+        # Mapping of common US cities to their IANA timezones
+        city_to_timezone = {
+            'new york': 'America/New_York',
+            'nyc': 'America/New_York',
+            'boston': 'America/New_York',
+            'philadelphia': 'America/New_York',
+            'washington': 'America/New_York',
+            'miami': 'America/New_York',
+            'atlanta': 'America/New_York',
+            'chicago': 'America/Chicago',
+            'indianapolis': 'America/Indiana/Indianapolis',
+            'dallas': 'America/Chicago',
+            'houston': 'America/Chicago',
+            'denver': 'America/Denver',
+            'phoenix': 'America/Phoenix',
+            'los angeles': 'America/Los_Angeles',
+            'la': 'America/Los_Angeles',
+            'san francisco': 'America/Los_Angeles',
+            'sf': 'America/Los_Angeles',
+            'seattle': 'America/Los_Angeles',
+            'portland': 'America/Los_Angeles',
+            'las vegas': 'America/Los_Angeles',
+        }
+
+        try:
+            # Search memory for timezone information
+            logger.info("Searching for user timezone in memory...")
+            memories = self.memory.search(
+                query="user timezone preference location city",
+                user_id=config.MEM0_USER_ID,
+                limit=5
+            )
+
+            # Parse memories to find timezone
+            if memories and isinstance(memories, dict):
+                memory_list = memories.get('results', [])
+            elif memories and isinstance(memories, list):
+                memory_list = memories
+            else:
+                memory_list = []
+
+            # Look for timezone patterns in memories
+            timezone_pattern = r'\b([A-Z][a-z]+/[A-Z][a-z_]+)\b'  # Matches "America/New_York" format
+
+            for mem in memory_list:
+                if isinstance(mem, dict):
+                    mem_text = mem.get('memory', mem.get('text', str(mem)))
+                else:
+                    mem_text = str(mem)
+
+                mem_text_lower = mem_text.lower()
+
+                # 1. Check if memory contains explicit timezone information
+                if 'timezone' in mem_text_lower or 'time zone' in mem_text_lower:
+                    # Try to extract timezone string
+                    match = re.search(timezone_pattern, mem_text)
+                    if match:
+                        timezone_str = match.group(1)
+                        # Validate timezone
+                        try:
+                            pytz.timezone(timezone_str)
+                            logger.info(f"Found explicit timezone in memory: {timezone_str}")
+                            return timezone_str
+                        except pytz.exceptions.UnknownTimeZoneError:
+                            logger.warning(f"Invalid timezone found in memory: {timezone_str}")
+                            continue
+
+                # 2. Check if memory contains a city name we can map to a timezone
+                for city, tz in city_to_timezone.items():
+                    if city in mem_text_lower:
+                        logger.info(f"Found city '{city}' in memory, mapping to timezone: {tz}")
+                        return tz
+
+            # Fallback: Try get_all() to retrieve all memories if search didn't find location
+            logger.info("Search didn't find timezone, trying get_all() as fallback...")
+            try:
+                all_memories = self.memory.get_all(user_id=config.MEM0_USER_ID)
+                if all_memories:
+                    if isinstance(all_memories, dict):
+                        all_memory_list = all_memories.get('results', [])
+                    elif isinstance(all_memories, list):
+                        all_memory_list = all_memories
+                    else:
+                        all_memory_list = []
+
+                    for mem in all_memory_list:
+                        if isinstance(mem, dict):
+                            mem_text = mem.get('memory', mem.get('text', str(mem)))
+                        else:
+                            mem_text = str(mem)
+
+                        mem_text_lower = mem_text.lower()
+
+                        # Check for city names in all memories
+                        for city, tz in city_to_timezone.items():
+                            if city in mem_text_lower:
+                                logger.info(f"Found city '{city}' in fallback memory check, mapping to timezone: {tz}")
+                                return tz
+
+                logger.info("No valid timezone found in all memories")
+            except Exception as fallback_error:
+                logger.warning(f"Fallback memory retrieval failed: {fallback_error}")
+
+            logger.info("No valid timezone found in memory, using UTC")
+            return 'UTC'
+
+        except Exception as e:
+            logger.error(f"Error retrieving timezone from memory: {e}", exc_info=True)
+            return 'UTC'
+
+    def _get_current_time_context(self, timezone_str: str = 'UTC') -> str:
+        """
+        Get current date and time context for this specific message.
+        Time is synced with us.pool.ntp.org for accuracy.
+
+        Args:
+            timezone_str: Timezone string (e.g., 'America/New_York' or 'UTC')
+
+        Returns:
+            Time context string with current datetime in the specified timezone
+        """
+        # Try to get NTP time first, fallback to system time
+        ntp_timestamp = self._get_ntp_time()
+
+        if ntp_timestamp:
+            # Use NTP time
+            now_utc = datetime.fromtimestamp(ntp_timestamp, tz=pytz.UTC)
+            time_source = "(synced with us.pool.ntp.org)"
+        else:
+            # Fallback to system time
+            now_utc = datetime.now(pytz.UTC)
+            time_source = "(system time)"
+
+        # Convert to user's timezone
+        try:
+            user_tz = pytz.timezone(timezone_str)
+            now_local = now_utc.astimezone(user_tz)
+
+            # Format datetime information
+            current_datetime = now_local.strftime("%A, %B %d, %Y at %I:%M %p %Z")
+            timezone_name = now_local.tzname()
+
+            return f"\n[Current Time]: {current_datetime} (Your timezone: {timezone_name}) {time_source}\n"
+
+        except Exception as e:
+            logger.error(f"Error converting to timezone {timezone_str}: {e}")
+            # Fallback to UTC
+            current_datetime = now_utc.strftime("%A, %B %d, %Y at %I:%M %p UTC")
+            return f"\n[Current Time]: {current_datetime} {time_source}\n"
 
     def _get_memory_context(self, user_input: str) -> str:
         """
@@ -381,6 +761,43 @@ class PydanticAIAgent:
         except Exception as e:
             logger.error(f"Error saving to memory: {e}", exc_info=True)
 
+    async def _save_to_memory_async(self, user_input: str, agent_response: str) -> None:
+        """
+        Async wrapper for saving conversation to long-term memory.
+        Runs memory.add() in a background thread to avoid blocking.
+
+        Args:
+            user_input: User message
+            agent_response: Agent response
+        """
+        if not self.memory:
+            logger.warning("Memory not initialized, skipping save")
+            return
+
+        try:
+            logger.info(f"Saving conversation to memory (async background task)...")
+
+            # Run the blocking memory.add() call in a thread pool executor
+            # to prevent blocking the event loop
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,  # Use default executor
+                lambda: self.memory.add(
+                    messages=[
+                        {"role": "user", "content": user_input},
+                        {"role": "assistant", "content": agent_response}
+                    ],
+                    user_id=config.MEM0_USER_ID,
+                    agent_id=config.MEM0_AGENT_ID,
+                    metadata=self.session_metadata,
+                    infer=True,  # Enable LLM-based fact extraction with custom prompt
+                )
+            )
+            logger.info(f"Conversation saved to memory successfully (background task completed)")
+
+        except Exception as e:
+            logger.error(f"Error saving to memory (async): {e}", exc_info=True)
+
     # def _validate_with_guardrails(self, text: str) -> bool:
     #     """
     #     Validate text using Guardrails AI
@@ -420,13 +837,21 @@ class PydanticAIAgent:
         # if not self._validate_with_guardrails(user_input):
         #     return "I'm sorry, but I cannot process that message. Please rephrase your request."
 
+        # Get user's timezone from memory
+        user_timezone = self._get_user_timezone()
+
+        # Get current time context (fresh for this message, in user's timezone)
+        time_context = self._get_current_time_context(user_timezone)
+
         # Get memory context
         memory_context = self._get_memory_context(user_input)
 
         # Prepare the full message with context
         full_message = user_input
-        if memory_context:
-            full_message = f"{memory_context}\n\n{user_input}"
+        if time_context or memory_context:
+            context_parts = [time_context, memory_context]
+            combined_context = "".join([ctx for ctx in context_parts if ctx])
+            full_message = f"{combined_context}\n{user_input}"
 
         # Get response from agent
         try:
@@ -477,13 +902,21 @@ class PydanticAIAgent:
             #     yield "I'm sorry, but I cannot process that message."
             #     return
 
+            # Get user's timezone from memory
+            user_timezone = self._get_user_timezone()
+
+            # Get current time context (fresh for this message, in user's timezone)
+            time_context = self._get_current_time_context(user_timezone)
+
             # Get memory context
             memory_context = self._get_memory_context(user_input)
 
             # Prepare the full message with context
             full_message = user_input
-            if memory_context:
-                full_message = f"{memory_context}\n\n{user_input}"
+            if time_context or memory_context:
+                context_parts = [time_context, memory_context]
+                combined_context = "".join([ctx for ctx in context_parts if ctx])
+                full_message = f"{combined_context}\n{user_input}"
 
             logger.info(f"Streaming response for message: {user_input[:50]}...")
 
@@ -501,8 +934,9 @@ class PydanticAIAgent:
             # if not self._validate_with_guardrails(full_response):
             #     yield " [Response was filtered for safety]"
 
-            # Save complete response to memory
-            self._save_to_memory(user_input, full_response)
+            # Save complete response to memory asynchronously (non-blocking)
+            # This runs in the background so it doesn't delay the stream completion signal
+            asyncio.create_task(self._save_to_memory_async(user_input, full_response))
 
         except Exception as e:
             logger.error(f"Error during streaming: {e}", exc_info=True)

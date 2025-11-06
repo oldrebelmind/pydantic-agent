@@ -19,10 +19,10 @@ class Config:
     OLLAMA_MODEL: str = os.getenv('OLLAMA_MODEL', 'llama3.2')
     OLLAMA_TIMEOUT: int = int(os.getenv('OLLAMA_TIMEOUT', '120'))
 
-    # Qdrant Configuration (for Mem0)
-    QDRANT_HOST: str = os.getenv('QDRANT_HOST', 'localhost')
-    QDRANT_PORT: int = int(os.getenv('QDRANT_PORT', '6333'))
-    QDRANT_COLLECTION: str = os.getenv('QDRANT_COLLECTION', 'agent_memory')
+    # Milvus Configuration (for Mem0)
+    MILVUS_HOST: str = os.getenv('MILVUS_HOST', 'localhost')
+    MILVUS_PORT: int = int(os.getenv('MILVUS_PORT', '19530'))
+    MILVUS_COLLECTION: str = os.getenv('MILVUS_COLLECTION', 'agent_memory')
 
     # Mem0 Configuration
     MEM0_USER_ID: str = os.getenv('MEM0_USER_ID', 'default_user')
@@ -85,7 +85,7 @@ class Config:
         print("\n=== Agent Configuration ===")
         print(f"Ollama Host: {cls.OLLAMA_HOST}")
         print(f"Ollama Model: {cls.OLLAMA_MODEL}")
-        print(f"Qdrant: {cls.QDRANT_HOST}:{cls.QDRANT_PORT}")
+        print(f"Milvus: {cls.MILVUS_HOST}:{cls.MILVUS_PORT}")
         print(f"Neo4j: {cls.NEO4J_URI}")
         print(f"Langfuse Enabled: {cls.LANGFUSE_ENABLED}")
         print(f"Guardrails Enabled: {cls.GUARDRAILS_ENABLED}")
