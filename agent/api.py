@@ -204,10 +204,15 @@ async def chat_stream(request: ChatRequest):
             else:
                 logger.info(f"Processing message: {request.message[:50]}...")
 
+            # Convert Pydantic LocationContext to dict for agent
+            location_dict = None
+            if request.location:
+                location_dict = request.location.model_dump()
+
             # Stream response from agent with location context
             async for token in agent.process_message_stream(
                 user_input=request.message,
-                location_context=request.location
+                location_context=location_dict
             ):
                 # Format as SSE event
                 event_data = json.dumps({'token': token})
