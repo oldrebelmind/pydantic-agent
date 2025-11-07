@@ -66,6 +66,10 @@ IMPORTANT:
 - Break down compound statements into separate facts
 - Preserve exact details like addresses, neighborhoods, districts
 - Extract preferences, habits, and contextual information
+- Extract tool usage, technical actions, and infrastructure details
+- Extract personal information: hobbies, health, relationships, goals
+- Extract financial information: subscriptions, purchases, costs
+- Extract ALL temporal information: dates, times, schedules, frequencies
 
 Format:
 user: <user message>
@@ -107,16 +111,538 @@ user: I'm a data scientist
 assistant: Data science is interesting!
 {"facts": ["Works as data scientist"]}
 
+user: My order #12345 hasn't arrived yet.
+assistant: I'm sorry for your inconvenience.
+{"facts": ["Order #12345 not received"]}
+
+user: I'm John Doe, and I'd like to return the shoes I bought last week.
+assistant: No problem, I'll help you with that.
+{"facts": ["Customer name: John Doe", "Wants to return shoes", "Purchase made last week"]}
+
+user: I ordered a red shirt, size medium, but received a blue one instead.
+assistant: I'm sorry about that. Let me check with the warehouse.
+{"facts": ["Ordered red shirt, size medium", "Received blue shirt instead"]}
+
 user: I prefer working in the mornings
 assistant: Morning work is productive!
 {"facts": ["Prefers working in mornings"]}
 
+user: I used the GitHub API to search for Python repositories
+assistant: I found 150 results.
+{"facts": ["Used GitHub API", "Searched for Python repositories", "Action: API search"]}
+
+user: I deployed my app to Azure using Docker containers
+assistant: Deployment successful!
+{"facts": ["Deployed app to Azure", "Used Docker containers", "Deployment method: Docker", "Platform: Azure"]}
+
+user: I ran a PowerShell script to clean up stale AD accounts
+assistant: The script completed successfully.
+{"facts": ["Ran PowerShell script", "Script purpose: clean up stale AD accounts", "Tool: PowerShell", "Target: Active Directory"]}
+
+user: I created a new Intune policy for our marketing team's devices
+assistant: Policy created.
+{"facts": ["Created Intune policy", "Policy target: marketing team devices", "Tool: Microsoft Intune"]}
+
+user: I queried the database using SQL to get customer sales data from Q3
+assistant: Here are the results.
+{"facts": ["Queried database", "Query language: SQL", "Data retrieved: customer sales", "Time period: Q3"]}
+
+user: I automated the backup process with a cron job running every night at 2am
+assistant: Automation set up successfully.
+{"facts": ["Automated backup process", "Method: cron job", "Schedule: every night at 2am", "Action type: automation"]}
+
+user: I used Postman to test the REST API endpoints for authentication
+assistant: All tests passed.
+{"facts": ["Used Postman", "Tested REST API endpoints", "Endpoints tested: authentication", "Action: API testing"]}
+
+user: I wrote a Python script using pandas to analyze CSV files
+assistant: Great approach!
+{"facts": ["Wrote Python script", "Used pandas library", "Script purpose: analyze CSV files", "Programming language: Python"]}
+
+user: I configured Cloudflare tunnels for secure remote access
+assistant: Tunnels are now active.
+{"facts": ["Configured Cloudflare tunnels", "Purpose: secure remote access", "Tool: Cloudflare"]}
+
+user: I used CrowdStrike Falcon to scan for malware across all endpoints
+assistant: Scan completed.
+{"facts": ["Used CrowdStrike Falcon", "Action: malware scan", "Scan scope: all endpoints", "Security tool: CrowdStrike Falcon"]}
+
+user: I created an Azure Logic App to sync data between SharePoint and SQL
+assistant: Logic App deployed.
+{"facts": ["Created Azure Logic App", "Integration: SharePoint to SQL", "Tool: Azure Logic Apps", "Data source: SharePoint", "Data destination: SQL"]}
+
+user: I prefer using kubectl for Kubernetes management
+assistant: That's a solid choice!
+{"facts": ["Prefers kubectl", "Tool used for: Kubernetes management", "Preferred tool: kubectl"]}
+
+user: I troubleshot the issue using the Microsoft Graph API explorer
+assistant: Good debugging approach.
+{"facts": ["Troubleshot using Microsoft Graph API explorer", "Tool: Microsoft Graph API", "Action: debugging/troubleshooting"]}
+
+user: I ran an N-Central automation policy to update agents across all client sites
+assistant: Policy executed successfully.
+{"facts": ["Ran N-Central automation policy", "Action: update agents", "Scope: all client sites", "Tool: N-Central RMM"]}
+
+user: I used the Microsoft Graph API to query stale Intune devices for Acme Corp
+assistant: Found 23 stale devices.
+{"facts": ["Used Microsoft Graph API", "Queried Intune devices", "Client: Acme Corp", "Device status: stale", "Tool: Microsoft Graph", "Target: Intune"]}
+
+user: I deployed an Azure Function with Python to automate Office 365 license reporting
+assistant: Function is live.
+{"facts": ["Deployed Azure Function", "Function language: Python", "Purpose: Office 365 license reporting", "Platform: Azure Functions", "Automation target: Office 365 licenses"]}
+
+user: I created a PowerShell script to cross-reference AD, Entra ID, and CrowdStrike data
+assistant: Script working well.
+{"facts": ["Created PowerShell script", "Script integrates: AD, Entra ID, CrowdStrike", "Purpose: cross-reference data", "Tool: PowerShell", "Platforms: Active Directory, Entra ID, CrowdStrike"]}
+
+user: I configured FSLogix App Masking for the kiosk environment at Smith Industries
+assistant: Configuration applied.
+{"facts": ["Configured FSLogix App Masking", "Client: Smith Industries", "Environment: kiosk", "Tool: FSLogix", "Use case: application control"]}
+
+user: I built a Chocolatey package for deploying our standard software stack
+assistant: Package ready for deployment.
+{"facts": ["Built Chocolatey package", "Purpose: deploy software stack", "Package type: standard software", "Tool: Chocolatey"]}
+
+user: I'm troubleshooting Azure AD Connect sync issues between on-prem AD and Entra ID
+assistant: Let me help with that.
+{"facts": ["Troubleshooting Azure AD Connect", "Issue: sync problems", "Source: on-premises AD", "Destination: Entra ID", "Tool: Azure AD Connect"]}
+
+user: I used N-Central's API to pull device inventory for all managed endpoints
+assistant: Inventory retrieved.
+{"facts": ["Used N-Central API", "Action: pull device inventory", "Scope: all managed endpoints", "Tool: N-Central RMM", "Data type: device inventory"]}
+
+user: I set up an Intune dynamic group for Windows 11 devices in the finance department
+assistant: Dynamic group created.
+{"facts": ["Set up Intune dynamic group", "Device OS: Windows 11", "Department: finance", "Tool: Microsoft Intune", "Group type: dynamic"]}
+
+user: I deployed Azure Container Apps for hosting our client portal microservices
+assistant: Container Apps running.
+{"facts": ["Deployed Azure Container Apps", "Purpose: client portal hosting", "Architecture: microservices", "Platform: Azure Container Apps"]}
+
+user: I wrote a Logic App to handle Microsoft Graph API throttling for bulk operations
+assistant: Logic App is handling throttling well.
+{"facts": ["Created Logic App", "Purpose: handle API throttling", "API: Microsoft Graph", "Use case: bulk operations", "Tool: Azure Logic Apps"]}
+
+user: I configured hybrid Azure AD join for workstations at three different client locations
+assistant: Hybrid join configured.
+{"facts": ["Configured hybrid Azure AD join", "Device type: workstations", "Number of locations: 3", "Join type: hybrid Azure AD", "Tool: Azure AD"]}
+
+user: I'm using CrowdStrike Falcon's RTR to remotely remediate the infected machine
+assistant: Remediation in progress.
+{"facts": ["Using CrowdStrike Falcon RTR", "Action: remote remediation", "Target: infected machine", "Tool: CrowdStrike Falcon", "Feature: Real Time Response"]}
+
+user: I deployed FSLogix profile containers to Azure Files for the VDI environment
+assistant: Profiles are syncing.
+{"facts": ["Deployed FSLogix profile containers", "Storage: Azure Files", "Environment: VDI", "Tool: FSLogix", "Storage platform: Azure Files"]}
+
+user: I'm using the Exchange Online PowerShell module to manage mailbox permissions
+assistant: What changes do you need to make?
+{"facts": ["Using Exchange Online PowerShell module", "Purpose: manage mailbox permissions", "Platform: Exchange Online", "Tool: PowerShell"]}
+
+user: I created a conditional access policy in Entra ID requiring MFA for admin accounts
+assistant: Policy is active.
+{"facts": ["Created conditional access policy", "Platform: Entra ID", "Requirement: MFA", "Target: admin accounts", "Security control: multi-factor authentication"]}
+
+user: I set up Azure Blob Storage lifecycle policies to archive old backup files after 90 days
+assistant: Lifecycle policy configured.
+{"facts": ["Set up Azure Blob Storage lifecycle policy", "Action: archive files", "Trigger: after 90 days", "File type: old backups", "Platform: Azure Blob Storage"]}
+
+user: I prefer using the Az PowerShell module over Azure CLI for automation scripts
+assistant: Both are good tools.
+{"facts": ["Prefers Az PowerShell module", "Preference over: Azure CLI", "Use case: automation scripts", "Tool: Azure PowerShell"]}
+
+user: I ran a compliance scan in N-Central across all Windows servers for missing patches
+assistant: Scan complete.
+{"facts": ["Ran compliance scan", "Tool: N-Central", "Target: Windows servers", "Scope: all servers", "Scan purpose: missing patches"]}
+
+user: I used Microsoft Defender API to query threat detections for the last 30 days
+assistant: Here are the results.
+{"facts": ["Used Microsoft Defender API", "Action: query threat detections", "Time period: last 30 days", "Tool: Microsoft Defender", "Data type: threat detections"]}
+
+user: I'm deploying Intune Win32 apps using intunewin packages for silent installation
+assistant: Deployment configured.
+{"facts": ["Deploying Intune Win32 apps", "Package format: intunewin", "Installation type: silent", "Tool: Microsoft Intune", "App deployment method: Win32"]}
+
+user: I built a SharePoint site for client documentation using modern templates
+assistant: Site looks good!
+{"facts": ["Built SharePoint site", "Purpose: client documentation", "Template type: modern", "Platform: SharePoint"]}
+
+user: I configured Azure Automation runbooks to start/stop VMs on a schedule
+assistant: Runbooks are scheduled.
+{"facts": ["Configured Azure Automation runbooks", "Action: start/stop VMs", "Trigger: scheduled", "Platform: Azure Automation", "Resource type: virtual machines"]}
+
+user: I'm using Microsoft Endpoint Manager to manage both Intune and ConfigMgr from one console
+assistant: That's the unified approach.
+{"facts": ["Using Microsoft Endpoint Manager", "Manages: Intune and ConfigMgr", "Interface: unified console", "Tool: Microsoft Endpoint Manager"]}
+
+user: I troubleshot wireless connectivity on Dell Latitude laptops by updating Intel drivers
+assistant: Did that resolve it?
+{"facts": ["Troubleshot wireless connectivity", "Device: Dell Latitude laptops", "Solution: updated Intel drivers", "Driver type: Intel wireless", "Issue: connectivity problems"]}
+
+user: I set up Azure VPN Gateway for site-to-site connectivity to client's on-prem network
+assistant: VPN tunnel is up.
+{"facts": ["Set up Azure VPN Gateway", "Connection type: site-to-site", "Destination: client on-premises network", "Tool: Azure VPN Gateway"]}
+
+user: I use PrtgScr for capturing screenshots when documenting client issues
+assistant: Good documentation practice.
+{"facts": ["Uses PrtgScr", "Purpose: capture screenshots", "Use case: document client issues", "Tool: Print Screen"]}
+
+user: I created a Microsoft 365 group with Teams integration for project collaboration
+assistant: Group is ready.
+{"facts": ["Created Microsoft 365 group", "Integration: Microsoft Teams", "Purpose: project collaboration", "Platform: Microsoft 365"]}
+
+user: I ran Get-ADComputer in PowerShell to audit stale computer accounts older than 90 days
+assistant: How many did you find?
+{"facts": ["Ran Get-ADComputer cmdlet", "Tool: PowerShell", "Purpose: audit stale accounts", "Criteria: older than 90 days", "Target: computer accounts", "Platform: Active Directory"]}
+
+user: I'm using Azure Monitor to track Logic App execution failures and performance metrics
+assistant: Good visibility setup.
+{"facts": ["Using Azure Monitor", "Monitoring: Logic App executions", "Metrics tracked: failures and performance", "Tool: Azure Monitor", "Target: Logic Apps"]}
+
+user: I scheduled the Azure AD Connect sync to run every 30 minutes
+assistant: Sync schedule configured.
+{"facts": ["Scheduled Azure AD Connect sync", "Frequency: every 30 minutes", "Tool: Azure AD Connect", "Action type: scheduled sync"]}
+
+user: The client's Office 365 E3 licenses expire on December 15, 2025
+assistant: I'll add a reminder.
+{"facts": ["Client has Office 365 E3 licenses", "License expiration date: December 15, 2025", "License type: Office 365 E3"]}
+
+user: I set up a maintenance window every Tuesday from 2am to 4am for server patching
+assistant: Maintenance window created.
+{"facts": ["Set up maintenance window", "Day: every Tuesday", "Time: 2am to 4am", "Duration: 2 hours", "Purpose: server patching", "Recurrence: weekly"]}
+
+user: Yesterday I migrated 50 mailboxes from on-prem Exchange to Exchange Online
+assistant: That's solid progress.
+{"facts": ["Migrated mailboxes", "Migration date: yesterday", "Quantity: 50 mailboxes", "Source: on-premises Exchange", "Destination: Exchange Online"]}
+
+user: The backup job runs daily at 11pm and takes approximately 3 hours to complete
+assistant: Good to know the timing.
+{"facts": ["Backup job runs daily", "Start time: 11pm", "Duration: approximately 3 hours", "Frequency: daily", "Estimated completion: 2am"]}
+
+user: I noticed the issue started last Thursday around 3pm
+assistant: That helps narrow it down.
+{"facts": ["Issue start date: last Thursday", "Issue start time: around 3pm", "Status: problem identified"]}
+
+user: The certificate expires in 45 days and needs renewal by January 20, 2026
+assistant: Better schedule that renewal.
+{"facts": ["Certificate expires in 45 days", "Renewal deadline: January 20, 2026", "Action needed: certificate renewal"]}
+
+user: I schedule all client patching for the second Saturday of each month between midnight and 6am
+assistant: Consistent schedule.
+{"facts": ["Patching schedule: second Saturday of each month", "Time window: midnight to 6am", "Duration: 6 hours", "Target: all clients", "Recurrence: monthly"]}
+
+user: The domain controller was last rebooted 127 days ago on July 1, 2025
+assistant: That's a long uptime.
+{"facts": ["Domain controller last reboot: 127 days ago", "Last reboot date: July 1, 2025", "Device type: domain controller", "Uptime: 127 days"]}
+
+user: I configured the Azure Function to run every 15 minutes during business hours
+assistant: Function schedule set.
+{"facts": ["Configured Azure Function", "Frequency: every 15 minutes", "Active period: business hours only", "Platform: Azure Functions"]}
+
+user: The script has been running in production for 6 months without issues
+assistant: Good stability.
+{"facts": ["Script in production for 6 months", "Status: no issues", "Stability period: 6 months"]}
+
+user: I upgraded all workstations from Windows 10 to Windows 11 over a 3-week period in August
+assistant: Nice migration timeline.
+{"facts": ["Upgraded workstations", "Source OS: Windows 10", "Target OS: Windows 11", "Duration: 3 weeks", "Migration month: August", "Device type: all workstations"]}
+
+user: The warranty on the Dell servers expires Q2 2026
+assistant: Note that for planning.
+{"facts": ["Dell servers warranty expires Q2 2026", "Device type: Dell servers", "Warranty period end: Q2 2026"]}
+
+user: I created a recurring report that emails every Monday at 8am with the previous week's metrics
+assistant: Report scheduled.
+{"facts": ["Created recurring report", "Frequency: every Monday", "Send time: 8am", "Content: previous week's metrics", "Delivery method: email", "Recurrence: weekly"]}
+
+user: The migration is planned for November 22-24, 2025 over the Thanksgiving weekend
+assistant: Good timing for minimal disruption.
+{"facts": ["Migration planned for November 22-24, 2025", "Duration: 3 days", "Timing: Thanksgiving weekend", "Action: migration"]}
+
+user: I deployed the new firewall rules at 10:30pm last night with no reported issues
+assistant: Smooth deployment.
+{"facts": ["Deployed firewall rules", "Deployment time: 10:30pm last night", "Status: no issues reported", "Action: firewall rule deployment"]}
+
+user: The SQL backup retention policy keeps daily backups for 30 days and monthly backups for 1 year
+assistant: Good retention strategy.
+{"facts": ["SQL backup retention policy configured", "Daily backups retained: 30 days", "Monthly backups retained: 1 year", "Database type: SQL"]}
+
+user: I changed their password reset frequency from 90 days to 180 days last month
+assistant: Policy updated.
+{"facts": ["Changed password reset frequency", "Old frequency: 90 days", "New frequency: 180 days", "Change made: last month", "Policy type: password reset"]}
+
+user: The system went offline at 2:47am and was restored by 3:15am
+assistant: Quick recovery.
+{"facts": ["System went offline at 2:47am", "System restored at 3:15am", "Downtime duration: 28 minutes", "Status: restored"]}
+
+user: We do quarterly security audits in January, April, July, and October
+assistant: Good audit cadence.
+{"facts": ["Security audits conducted quarterly", "Audit months: January, April, July, October", "Frequency: quarterly", "Audit type: security"]}
+
+user: The printer firmware was last updated 8 months ago
+assistant: Might be time for an update.
+{"facts": ["Printer firmware last updated 8 months ago", "Device type: printer", "Update type: firmware", "Time since update: 8 months"]}
+
+user: I scheduled a test failover for December 10th at 6pm to verify DR procedures
+assistant: Test scheduled.
+{"facts": ["Scheduled test failover", "Date: December 10th", "Time: 6pm", "Purpose: verify DR procedures", "Test type: failover"]}
+
+user: The MFA rollout took 4 weeks and was completed September 30, 2025
+assistant: Project completed.
+{"facts": ["MFA rollout duration: 4 weeks", "Completion date: September 30, 2025", "Project: MFA rollout", "Status: completed"]}
+
+user: I check the N-Central dashboard every morning at 9am for alerts
+assistant: Good monitoring routine.
+{"facts": ["Checks N-Central dashboard", "Frequency: every morning", "Time: 9am", "Purpose: check for alerts", "Tool: N-Central", "Routine: daily"]}
+
+user: The tenant was created on March 15, 2024 and migrated to our management on June 1, 2025
+assistant: Got the timeline.
+{"facts": ["Tenant created: March 15, 2024", "Tenant migration date: June 1, 2025", "Time between creation and migration: approximately 2.5 months", "Status: under our management"]}
+
+user: Their support contract renews annually every April 1st for $12,000
+assistant: Contract noted.
+{"facts": ["Support contract renews annually", "Renewal date: April 1st", "Contract value: $12,000", "Renewal frequency: annual"]}
+
+user: I run the stale account cleanup script bi-weekly on alternating Fridays
+assistant: Regular maintenance schedule.
+{"facts": ["Script: stale account cleanup", "Frequency: bi-weekly", "Day: alternating Fridays", "Script purpose: cleanup stale accounts"]}
+
+user: The SLA guarantees 99.9% uptime which allows for about 8.76 hours of downtime per year
+assistant: That's the calculation.
+{"facts": ["SLA uptime guarantee: 99.9%", "Allowed downtime: 8.76 hours per year", "Agreement type: SLA"]}
+
+user: Peak usage hours are between 9am-11am and 2pm-4pm on weekdays
+assistant: Good to know for planning.
+{"facts": ["Peak usage: 9am-11am weekdays", "Peak usage: 2pm-4pm weekdays", "Days: weekdays only"]}
+
+user: I started the migration at midnight and it's been running for 6 hours so far
+assistant: Migration in progress.
+{"facts": ["Migration start time: midnight", "Current duration: 6 hours", "Status: in progress", "Current time estimate: 6am"]}
+
+user: The incident occurred at exactly 4:23pm EST on November 1st, 2025
+assistant: Timestamp recorded.
+{"facts": ["Incident time: 4:23pm EST", "Incident date: November 1st, 2025", "Timezone: EST", "Event: incident"]}
+
+user: I'm scheduling routine reboots for all servers on the first Sunday of each month at 3am
+assistant: Reboot schedule configured.
+{"facts": ["Routine reboots scheduled", "Frequency: first Sunday of each month", "Time: 3am", "Target: all servers", "Recurrence: monthly"]}
+
+user: Their Microsoft 365 tenant has been active for 18 months since May 2024
+assistant: Tenant age noted.
+{"facts": ["Microsoft 365 tenant active for 18 months", "Tenant start date: May 2024", "Platform: Microsoft 365"]}
+
+user: I'm reading Atomic Habits and trying to build a morning workout routine
+assistant: Great book and goal!
+{"facts": ["Reading Atomic Habits", "Book: Atomic Habits", "Building morning workout routine", "Routine: morning workout"]}
+
+user: My daughter Sarah is taking piano lessons at Harmony Music School every Wednesday
+assistant: That's wonderful!
+{"facts": ["Has daughter named Sarah", "Sarah takes piano lessons", "School: Harmony Music School", "Lesson schedule: every Wednesday"]}
+
+user: I'm allergic to shellfish and prefer vegan restaurants
+assistant: I'll remember your dietary needs.
+{"facts": ["Allergic to shellfish", "Prefers vegan restaurants", "Dietary restriction: shellfish"]}
+
+user: My dentist Dr. Miller is at 123 Oak Street and I see him every 6 months
+assistant: Regular dental care is important.
+{"facts": ["Dentist: Dr. Miller", "Dentist location: 123 Oak Street", "Visit frequency: every 6 months", "Healthcare provider: Dr. Miller"]}
+
+user: I have a Netflix subscription that costs $15.99 per month and renews on the 5th
+assistant: Subscription noted.
+{"facts": ["Has Netflix subscription", "Netflix cost: $15.99 per month", "Renewal date: 5th of each month", "Subscription: Netflix"]}
+
+user: I'm learning Spanish using Duolingo for my trip to Barcelona next summer
+assistant: Barcelona will be amazing!
+{"facts": ["Learning Spanish", "Tool: Duolingo", "Traveling to Barcelona", "Trip timing: next summer", "Learning purpose: Barcelona trip"]}
+
+user: I ordered a standing desk from Amazon for $450, order #12345, arriving Friday
+assistant: Great purchase!
+{"facts": ["Ordered standing desk", "Vendor: Amazon", "Cost: $450", "Order number: 12345", "Arrival date: Friday"]}
+
+user: My goal is to run a marathon by December, currently training 4 days a week
+assistant: That's an ambitious goal!
+{"facts": ["Goal: run a marathon", "Target date: December", "Training frequency: 4 days a week", "Currently training for marathon"]}
+
+user: I watch The Office every night before bed, it helps me relax
+assistant: Classic show!
+{"facts": ["Watches The Office", "Viewing time: every night before bed", "Purpose: helps relaxation", "Show: The Office", "Evening routine: watch TV"]}
+
+user: I take my medication Lipitor 20mg every morning with breakfast
+assistant: Consistent medication schedule is good.
+{"facts": ["Takes Lipitor 20mg", "Dosage: 20mg", "Schedule: every morning with breakfast", "Medication: Lipitor"]}
+
+user: My brother Mark lives in Seattle and works as a software engineer at Microsoft
+assistant: Cool!
+{"facts": ["Has brother named Mark", "Mark lives in Seattle", "Mark works as software engineer", "Mark works at Microsoft"]}
+
+user: I play tennis twice a week at Riverside Courts with my friend Tom
+assistant: Sounds fun!
+{"facts": ["Plays tennis", "Tennis frequency: twice a week", "Location: Riverside Courts", "Plays with Tom", "Friend: Tom"]}
+
+user: I'm training for a 5K in March and running 3 miles every other day
+assistant: Keep up the training!
+{"facts": ["Training for 5K race", "Race date: March", "Training: running 3 miles", "Frequency: every other day"]}
+
+user: My anniversary is June 12th and I've been married for 15 years
+assistant: Congratulations!
+{"facts": ["Anniversary date: June 12th", "Married for 15 years", "Relationship status: married"]}
+
+user: I have a gym membership at LA Fitness that costs $40 per month
+assistant: Good to stay active!
+{"facts": ["Has gym membership", "Gym: LA Fitness", "Membership cost: $40 per month", "Subscription: LA Fitness"]}
+
+user: My favorite restaurant is Luigi's on Main Street, I go there monthly
+assistant: Italian food is great!
+{"facts": ["Favorite restaurant: Luigi's", "Restaurant location: Main Street", "Visit frequency: monthly"]}
+
+user: I'm studying for the AWS Solutions Architect certification exam in December
+assistant: Good luck with your studies!
+{"facts": ["Studying for AWS Solutions Architect certification", "Exam date: December", "Certification: AWS Solutions Architect"]}
+
+user: I have a standing meeting with my team every Monday at 10am
+assistant: Regular team sync.
+{"facts": ["Has standing team meeting", "Meeting day: every Monday", "Meeting time: 10am", "Meeting type: team meeting"]}
+
+user: My son plays soccer and has practice on Tuesdays and Thursdays at 5pm
+assistant: Youth sports are great!
+{"facts": ["Has son who plays soccer", "Soccer practice days: Tuesdays and Thursdays", "Practice time: 5pm"]}
+
+user: I'm vegetarian and have been for 5 years
+assistant: Plant-based lifestyle!
+{"facts": ["Is vegetarian", "Vegetarian for 5 years", "Dietary preference: vegetarian"]}
+
+user: I'm learning to play guitar and practice 30 minutes every evening
+assistant: Music is rewarding!
+{"facts": ["Learning guitar", "Practice duration: 30 minutes", "Practice frequency: every evening", "Instrument: guitar"]}
+
+user: My car insurance with State Farm renews annually in September for $1,200
+assistant: Annual renewal noted.
+{"facts": ["Car insurance provider: State Farm", "Renewal frequency: annually", "Renewal month: September", "Insurance cost: $1,200 per year"]}
+
+user: I volunteer at the animal shelter on Saturday mornings
+assistant: That's wonderful volunteer work!
+{"facts": ["Volunteers at animal shelter", "Volunteer day: Saturday mornings", "Activity: animal shelter volunteering"]}
+
+user: My favorite podcast is The Daily and I listen to it during my morning commute
+assistant: Good listening!
+{"facts": ["Favorite podcast: The Daily", "Listens during morning commute", "Podcast: The Daily"]}
+
+user: I'm trying to drink 8 glasses of water a day as a health goal
+assistant: Hydration is important!
+{"facts": ["Health goal: drink 8 glasses of water daily", "Target: 8 glasses per day", "Goal type: hydration"]}
+
+user: My daughter's birthday is October 15th and she's turning 8
+assistant: Plan something fun!
+{"facts": ["Daughter's birthday: October 15th", "Daughter turning 8 years old", "Age: 8"]}
+
 Return: {"facts": [...]}
 """
 
-CUSTOM_ENTITY_EXTRACTION_PROMPT = """You are an expert at extracting entities and their relationships from conversations.
+CUSTOM_ENTITY_EXTRACTION_PROMPT = """You are an expert at extracting entities and their relationships from conversations about IT infrastructure, MSP operations, technical workflows, and personal contexts.
 
-Extract ONLY concrete entities (people, organizations, places, projects, products) and their relationships.
+Extract ONLY concrete entities and their relationships. Break down compound information into separate entities and relationships.
+
+ENTITY TYPES:
+
+**Professional/Technical:**
+- Person: Names of individuals
+- Organization/Client: Company names, client names
+- Tool/Platform: Software, APIs, services, applications (Azure, Intune, N-Central, CrowdStrike, etc.)
+- Project: Specific projects or initiatives
+- Device: Computers, servers, endpoints with names/identifiers
+- Environment: Kiosk, VDI, production, test environments
+- Team/Department: Groups within organizations
+- Technology: Programming languages, protocols, frameworks
+- Skill/Expertise: Technical abilities or knowledge areas
+- Action/Task: Specific operations, automations, scripts
+- Issue/Incident: Problems, errors, tickets
+- Policy/Configuration: Rules, settings, configurations
+- Resource: Azure resources, storage, networks, infrastructure components
+
+**Location & Geography:**
+- Location: Places with full specificity (city, neighborhood, area, office location)
+- Address: Specific street addresses
+- Venue: Restaurants, stores, facilities
+
+**Temporal:**
+- Temporal: Dates, schedules, time windows, deadlines, frequencies
+- Event: Meetings, appointments, celebrations, milestones
+
+**Personal & Lifestyle:**
+- Hobby/Interest: Activities, pastimes, interests
+- Media: Books, movies, TV shows, podcasts, music, games
+- Food: Dishes, restaurants, cuisines, dietary restrictions
+- Health: Medical conditions, medications, doctors, fitness activities
+- Relationship: Family members, friends, contacts (with context)
+
+**Financial & Commerce:**
+- Account: Bank accounts, investment accounts, subscriptions
+- Product: Physical products, purchases
+- Service: Subscription services, memberships
+- Transaction: Orders, purchases, payments
+
+**Education & Learning:**
+- Course: Classes, training programs
+- Certification: Professional certifications, qualifications
+- Institution: Schools, universities, training centers
+
+**Documents & Content:**
+- Document: Files, reports, contracts, notes
+- Website: URLs, online resources
+- Communication: Email threads, messages, channels
+
+**Goals & Objectives:**
+- Goal: Personal or professional objectives
+- Habit: Regular routines, practices
+- Preference: Likes, dislikes, choices
+
+RELATIONSHIP TYPES:
+
+**Professional:**
+- WORKS_AT, WORKS_AS, MANAGES, LEADS, REPORTS_TO
+- USES_TOOL, PREFERS_TOOL, DEPLOYED, CONFIGURED
+- MANAGES_CLIENT, HAS_ENVIRONMENT
+- CREATED, BUILT, DEVELOPED, WROTE
+- INTEGRATES_WITH, CONNECTS_TO, SYNCS_WITH
+- TARGETS, APPLIED_TO, OPERATES_ON
+- RESOLVED_WITH, FIXED_BY, CAUSED_BY
+- MEMBER_OF, PART_OF, BELONGS_TO
+
+**Location & Movement:**
+- LIVES_IN, WORKS_FROM, LOCATED_IN, LOCATED_AT
+- TRAVELS_TO, VISITED, MOVING_TO
+
+**Temporal:**
+- SCHEDULED_FOR, EXPIRES_ON, DUE_ON, RUNS_AT
+- STARTED_ON, COMPLETED_ON, OCCURRED_ON
+- HAPPENS_EVERY, REPEATS_ON
+
+**Personal:**
+- INTERESTED_IN, ENJOYS, DISLIKES
+- PRACTICES, PLAYS, LEARNS
+- RELATED_TO (family), FRIENDS_WITH, KNOWS
+- READS, WATCHES, LISTENS_TO
+- EATS_AT, PREFERS_FOOD
+
+**Health & Wellness:**
+- DIAGNOSED_WITH, TAKES_MEDICATION, TREATS
+- EXERCISES_WITH, TRAINS_FOR
+- PRESCRIBED_BY, SEEING_DOCTOR
+
+**Financial:**
+- OWNS, PURCHASED, SUBSCRIBED_TO
+- COSTS, PAID_FOR, INVESTED_IN
+- RENEWED_ON, CANCELLED
+
+**Education:**
+- ENROLLED_IN, COMPLETED, STUDYING
+- CERTIFIED_IN, QUALIFIED_FOR
+- TEACHES, MENTORS, LEARNS_FROM
+
+**Goals & Habits:**
+- WORKING_TOWARDS, ACHIEVED, PURSUING
+- DOES_DAILY, DOES_WEEKLY, ROUTINELY_PERFORMS
+- WANTS_TO, PLANS_TO, CONSIDERING
 
 Format your response as JSON with entities and relationships:
 
@@ -157,7 +683,497 @@ Output:
     ]
 }
 
-Extract all entities and relationships from the conversation.
+Input: "I live on the north side of Indianapolis"
+Output:
+{
+    "entities": [
+        {"name": "Indianapolis", "type": "Location"},
+        {"name": "north side of Indianapolis", "type": "Location"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "north side of Indianapolis", "type": "LIVES_IN"},
+        {"from": "north side of Indianapolis", "to": "Indianapolis", "type": "PART_OF"}
+    ]
+}
+
+Input: "I used the Microsoft Graph API to query stale Intune devices for Acme Corp"
+Output:
+{
+    "entities": [
+        {"name": "Microsoft Graph API", "type": "Tool"},
+        {"name": "Intune", "type": "Platform"},
+        {"name": "Acme Corp", "type": "Client"},
+        {"name": "stale Intune devices", "type": "Resource"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Microsoft Graph API", "type": "USES_TOOL"},
+        {"from": "Microsoft Graph API", "to": "stale Intune devices", "type": "QUERIES"},
+        {"from": "stale Intune devices", "to": "Intune", "type": "MANAGED_BY"},
+        {"from": "stale Intune devices", "to": "Acme Corp", "type": "BELONGS_TO"}
+    ]
+}
+
+Input: "I deployed an Azure Function with Python to automate Office 365 license reporting"
+Output:
+{
+    "entities": [
+        {"name": "Azure Function", "type": "Platform"},
+        {"name": "Python", "type": "Technology"},
+        {"name": "Office 365 license reporting", "type": "Action"},
+        {"name": "Office 365", "type": "Platform"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Azure Function", "type": "DEPLOYED"},
+        {"from": "Azure Function", "to": "Python", "type": "USES"},
+        {"from": "Azure Function", "to": "Office 365 license reporting", "type": "AUTOMATES"},
+        {"from": "Office 365 license reporting", "to": "Office 365", "type": "TARGETS"}
+    ]
+}
+
+Input: "I configured FSLogix App Masking for the kiosk environment at Smith Industries"
+Output:
+{
+    "entities": [
+        {"name": "FSLogix App Masking", "type": "Tool"},
+        {"name": "kiosk environment", "type": "Environment"},
+        {"name": "Smith Industries", "type": "Client"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "FSLogix App Masking", "type": "CONFIGURED"},
+        {"from": "FSLogix App Masking", "to": "kiosk environment", "type": "APPLIED_TO"},
+        {"from": "kiosk environment", "to": "Smith Industries", "type": "BELONGS_TO"}
+    ]
+}
+
+Input: "I ran a PowerShell script to cross-reference AD, Entra ID, and CrowdStrike data"
+Output:
+{
+    "entities": [
+        {"name": "PowerShell script", "type": "Action"},
+        {"name": "PowerShell", "type": "Tool"},
+        {"name": "Active Directory", "type": "Platform"},
+        {"name": "Entra ID", "type": "Platform"},
+        {"name": "CrowdStrike", "type": "Platform"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "PowerShell script", "type": "EXECUTED"},
+        {"from": "PowerShell script", "to": "PowerShell", "type": "USES"},
+        {"from": "PowerShell script", "to": "Active Directory", "type": "QUERIES"},
+        {"from": "PowerShell script", "to": "Entra ID", "type": "QUERIES"},
+        {"from": "PowerShell script", "to": "CrowdStrike", "type": "QUERIES"}
+    ]
+}
+
+Input: "I scheduled the Azure AD Connect sync to run every 30 minutes"
+Output:
+{
+    "entities": [
+        {"name": "Azure AD Connect sync", "type": "Action"},
+        {"name": "Azure AD Connect", "type": "Tool"},
+        {"name": "every 30 minutes", "type": "Temporal"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Azure AD Connect sync", "type": "SCHEDULED"},
+        {"from": "Azure AD Connect sync", "to": "Azure AD Connect", "type": "USES"},
+        {"from": "Azure AD Connect sync", "to": "every 30 minutes", "type": "RUNS_AT"}
+    ]
+}
+
+Input: "The client's Office 365 E3 licenses expire on December 15, 2025"
+Output:
+{
+    "entities": [
+        {"name": "Client", "type": "Organization"},
+        {"name": "Office 365 E3 licenses", "type": "Resource"},
+        {"name": "December 15, 2025", "type": "Temporal"}
+    ],
+    "relationships": [
+        {"from": "Client", "to": "Office 365 E3 licenses", "type": "HAS"},
+        {"from": "Office 365 E3 licenses", "to": "December 15, 2025", "type": "EXPIRES_ON"}
+    ]
+}
+
+Input: "I set up a maintenance window every Tuesday from 2am to 4am for server patching"
+Output:
+{
+    "entities": [
+        {"name": "maintenance window", "type": "Action"},
+        {"name": "every Tuesday 2am-4am", "type": "Temporal"},
+        {"name": "server patching", "type": "Action"},
+        {"name": "servers", "type": "Device"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "maintenance window", "type": "CREATED"},
+        {"from": "maintenance window", "to": "every Tuesday 2am-4am", "type": "SCHEDULED_FOR"},
+        {"from": "maintenance window", "to": "server patching", "type": "FOR_PURPOSE"},
+        {"from": "server patching", "to": "servers", "type": "TARGETS"}
+    ]
+}
+
+Input: "I troubleshot wireless connectivity on Dell Latitude laptops by updating Intel drivers"
+Output:
+{
+    "entities": [
+        {"name": "wireless connectivity issue", "type": "Issue"},
+        {"name": "Dell Latitude laptops", "type": "Device"},
+        {"name": "Intel drivers", "type": "Resource"},
+        {"name": "driver update", "type": "Action"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "wireless connectivity issue", "type": "TROUBLESHOT"},
+        {"from": "wireless connectivity issue", "to": "Dell Latitude laptops", "type": "AFFECTS"},
+        {"from": "wireless connectivity issue", "to": "driver update", "type": "RESOLVED_BY"},
+        {"from": "driver update", "to": "Intel drivers", "type": "UPDATES"}
+    ]
+}
+
+Input: "I prefer using the Az PowerShell module over Azure CLI for automation scripts"
+Output:
+{
+    "entities": [
+        {"name": "Az PowerShell module", "type": "Tool"},
+        {"name": "Azure CLI", "type": "Tool"},
+        {"name": "automation scripts", "type": "Action"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Az PowerShell module", "type": "PREFERS_TOOL"},
+        {"from": "Az PowerShell module", "to": "automation scripts", "type": "USED_FOR"},
+        {"from": "Person", "to": "Azure CLI", "type": "ALTERNATIVE_TO"}
+    ]
+}
+
+Input: "I created an Intune dynamic group for Windows 11 devices in the finance department"
+Output:
+{
+    "entities": [
+        {"name": "Intune dynamic group", "type": "Resource"},
+        {"name": "Intune", "type": "Platform"},
+        {"name": "Windows 11 devices", "type": "Device"},
+        {"name": "finance department", "type": "Department"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Intune dynamic group", "type": "CREATED"},
+        {"from": "Intune dynamic group", "to": "Intune", "type": "MANAGED_BY"},
+        {"from": "Intune dynamic group", "to": "Windows 11 devices", "type": "CONTAINS"},
+        {"from": "Windows 11 devices", "to": "finance department", "type": "BELONGS_TO"}
+    ]
+}
+
+Input: "I deployed Azure Container Apps for hosting our client portal microservices"
+Output:
+{
+    "entities": [
+        {"name": "Azure Container Apps", "type": "Platform"},
+        {"name": "client portal", "type": "Project"},
+        {"name": "microservices", "type": "Technology"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Azure Container Apps", "type": "DEPLOYED"},
+        {"from": "Azure Container Apps", "to": "client portal", "type": "HOSTS"},
+        {"from": "client portal", "to": "microservices", "type": "USES"}
+    ]
+}
+
+Input: "I ran Get-ADComputer in PowerShell to audit stale computer accounts older than 90 days"
+Output:
+{
+    "entities": [
+        {"name": "Get-ADComputer", "type": "Tool"},
+        {"name": "PowerShell", "type": "Tool"},
+        {"name": "stale computer accounts", "type": "Resource"},
+        {"name": "Active Directory", "type": "Platform"},
+        {"name": "90 days", "type": "Temporal"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Get-ADComputer", "type": "EXECUTED"},
+        {"from": "Get-ADComputer", "to": "PowerShell", "type": "RUNS_IN"},
+        {"from": "Get-ADComputer", "to": "stale computer accounts", "type": "QUERIES"},
+        {"from": "stale computer accounts", "to": "Active Directory", "type": "STORED_IN"},
+        {"from": "stale computer accounts", "to": "90 days", "type": "OLDER_THAN"}
+    ]
+}
+
+Input: "I used CrowdStrike Falcon's RTR to remotely remediate the infected machine"
+Output:
+{
+    "entities": [
+        {"name": "CrowdStrike Falcon", "type": "Platform"},
+        {"name": "RTR", "type": "Tool"},
+        {"name": "infected machine", "type": "Device"},
+        {"name": "remediation", "type": "Action"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "RTR", "type": "USES_TOOL"},
+        {"from": "RTR", "to": "CrowdStrike Falcon", "type": "PART_OF"},
+        {"from": "RTR", "to": "remediation", "type": "PERFORMS"},
+        {"from": "remediation", "to": "infected machine", "type": "TARGETS"}
+    ]
+}
+
+Input: "I wrote a Logic App to handle Microsoft Graph API throttling for bulk operations"
+Output:
+{
+    "entities": [
+        {"name": "Logic App", "type": "Tool"},
+        {"name": "Azure Logic Apps", "type": "Platform"},
+        {"name": "Microsoft Graph API", "type": "Platform"},
+        {"name": "API throttling", "type": "Issue"},
+        {"name": "bulk operations", "type": "Action"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Logic App", "type": "CREATED"},
+        {"from": "Logic App", "to": "Azure Logic Apps", "type": "RUNS_ON"},
+        {"from": "Logic App", "to": "API throttling", "type": "HANDLES"},
+        {"from": "API throttling", "to": "Microsoft Graph API", "type": "CAUSED_BY"},
+        {"from": "Logic App", "to": "bulk operations", "type": "ENABLES"}
+    ]
+}
+
+Input: "I configured hybrid Azure AD join for workstations at three different client locations"
+Output:
+{
+    "entities": [
+        {"name": "hybrid Azure AD join", "type": "Configuration"},
+        {"name": "Azure AD", "type": "Platform"},
+        {"name": "workstations", "type": "Device"},
+        {"name": "three client locations", "type": "Location"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "hybrid Azure AD join", "type": "CONFIGURED"},
+        {"from": "hybrid Azure AD join", "to": "Azure AD", "type": "USES"},
+        {"from": "hybrid Azure AD join", "to": "workstations", "type": "APPLIED_TO"},
+        {"from": "workstations", "to": "three client locations", "type": "LOCATED_IN"}
+    ]
+}
+
+Input: "Yesterday I migrated 50 mailboxes from on-prem Exchange to Exchange Online"
+Output:
+{
+    "entities": [
+        {"name": "mailbox migration", "type": "Action"},
+        {"name": "50 mailboxes", "type": "Resource"},
+        {"name": "on-premises Exchange", "type": "Platform"},
+        {"name": "Exchange Online", "type": "Platform"},
+        {"name": "yesterday", "type": "Temporal"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "mailbox migration", "type": "PERFORMED"},
+        {"from": "mailbox migration", "to": "yesterday", "type": "OCCURRED_ON"},
+        {"from": "mailbox migration", "to": "50 mailboxes", "type": "MIGRATED"},
+        {"from": "50 mailboxes", "to": "on-premises Exchange", "type": "SOURCE"},
+        {"from": "50 mailboxes", "to": "Exchange Online", "type": "DESTINATION"}
+    ]
+}
+
+**Additional General Purpose Examples:**
+
+Input: "I'm reading 'Atomic Habits' and trying to build a morning workout routine"
+Output:
+{
+    "entities": [
+        {"name": "Atomic Habits", "type": "Media"},
+        {"name": "morning workout routine", "type": "Habit"},
+        {"name": "workout", "type": "Health"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Atomic Habits", "type": "READS"},
+        {"from": "Person", "to": "morning workout routine", "type": "BUILDING"},
+        {"from": "morning workout routine", "to": "workout", "type": "INCLUDES"}
+    ]
+}
+
+Input: "My daughter Sarah is taking piano lessons at Harmony Music School every Wednesday"
+Output:
+{
+    "entities": [
+        {"name": "Sarah", "type": "Person"},
+        {"name": "piano lessons", "type": "Course"},
+        {"name": "Harmony Music School", "type": "Institution"},
+        {"name": "every Wednesday", "type": "Temporal"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Sarah", "type": "PARENT_OF"},
+        {"from": "Sarah", "to": "piano lessons", "type": "ENROLLED_IN"},
+        {"from": "piano lessons", "to": "Harmony Music School", "type": "LOCATED_AT"},
+        {"from": "piano lessons", "to": "every Wednesday", "type": "SCHEDULED_FOR"}
+    ]
+}
+
+Input: "I'm allergic to shellfish and prefer vegan restaurants"
+Output:
+{
+    "entities": [
+        {"name": "shellfish allergy", "type": "Health"},
+        {"name": "shellfish", "type": "Food"},
+        {"name": "vegan restaurants", "type": "Venue"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "shellfish allergy", "type": "HAS"},
+        {"from": "shellfish allergy", "to": "shellfish", "type": "ALLERGIC_TO"},
+        {"from": "Person", "to": "vegan restaurants", "type": "PREFERS"}
+    ]
+}
+
+Input: "My dentist Dr. Miller is at 123 Oak Street and I see him every 6 months"
+Output:
+{
+    "entities": [
+        {"name": "Dr. Miller", "type": "Person"},
+        {"name": "dentist", "type": "Health"},
+        {"name": "123 Oak Street", "type": "Address"},
+        {"name": "every 6 months", "type": "Temporal"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Dr. Miller", "type": "SEEING_DOCTOR"},
+        {"from": "Dr. Miller", "to": "dentist", "type": "WORKS_AS"},
+        {"from": "Dr. Miller", "to": "123 Oak Street", "type": "LOCATED_AT"},
+        {"from": "Person", "to": "Dr. Miller", "type": "VISITS"},
+        {"from": "Person", "to": "every 6 months", "type": "VISITS_FREQUENCY"}
+    ]
+}
+
+Input: "I have a Netflix subscription that costs $15.99 per month and renews on the 5th"
+Output:
+{
+    "entities": [
+        {"name": "Netflix subscription", "type": "Service"},
+        {"name": "Netflix", "type": "Organization"},
+        {"name": "$15.99 per month", "type": "Transaction"},
+        {"name": "5th of each month", "type": "Temporal"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Netflix subscription", "type": "SUBSCRIBED_TO"},
+        {"from": "Netflix subscription", "to": "Netflix", "type": "PROVIDED_BY"},
+        {"from": "Netflix subscription", "to": "$15.99 per month", "type": "COSTS"},
+        {"from": "Netflix subscription", "to": "5th of each month", "type": "RENEWS_ON"}
+    ]
+}
+
+Input: "I'm learning Spanish using Duolingo for my trip to Barcelona next summer"
+Output:
+{
+    "entities": [
+        {"name": "Spanish", "type": "Skill"},
+        {"name": "Duolingo", "type": "Tool"},
+        {"name": "Barcelona", "type": "Location"},
+        {"name": "next summer", "type": "Temporal"},
+        {"name": "trip to Barcelona", "type": "Event"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Spanish", "type": "LEARNING"},
+        {"from": "Person", "to": "Duolingo", "type": "USES_TOOL"},
+        {"from": "Duolingo", "to": "Spanish", "type": "TEACHES"},
+        {"from": "Person", "to": "trip to Barcelona", "type": "PLANNING"},
+        {"from": "trip to Barcelona", "to": "Barcelona", "type": "DESTINATION"},
+        {"from": "trip to Barcelona", "to": "next summer", "type": "SCHEDULED_FOR"}
+    ]
+}
+
+Input: "I ordered a standing desk from Amazon for $450, order #12345, arriving Friday"
+Output:
+{
+    "entities": [
+        {"name": "standing desk", "type": "Product"},
+        {"name": "Amazon", "type": "Organization"},
+        {"name": "$450", "type": "Transaction"},
+        {"name": "order #12345", "type": "Transaction"},
+        {"name": "Friday", "type": "Temporal"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "standing desk", "type": "ORDERED"},
+        {"from": "standing desk", "to": "Amazon", "type": "PURCHASED_FROM"},
+        {"from": "standing desk", "to": "$450", "type": "COSTS"},
+        {"from": "standing desk", "to": "order #12345", "type": "ORDER_NUMBER"},
+        {"from": "standing desk", "to": "Friday", "type": "ARRIVING_ON"}
+    ]
+}
+
+Input: "My goal is to run a marathon by December, currently training 4 days a week"
+Output:
+{
+    "entities": [
+        {"name": "run a marathon", "type": "Goal"},
+        {"name": "marathon", "type": "Event"},
+        {"name": "December", "type": "Temporal"},
+        {"name": "training", "type": "Habit"},
+        {"name": "4 days a week", "type": "Temporal"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "run a marathon", "type": "WORKING_TOWARDS"},
+        {"from": "run a marathon", "to": "December", "type": "TARGET_DATE"},
+        {"from": "Person", "to": "training", "type": "DOING"},
+        {"from": "training", "to": "4 days a week", "type": "FREQUENCY"},
+        {"from": "training", "to": "run a marathon", "type": "PREPARES_FOR"}
+    ]
+}
+
+Input: "I watch The Office every night before bed, it helps me relax"
+Output:
+{
+    "entities": [
+        {"name": "The Office", "type": "Media"},
+        {"name": "evening routine", "type": "Habit"},
+        {"name": "relaxation", "type": "Goal"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "The Office", "type": "WATCHES"},
+        {"from": "The Office", "to": "evening routine", "type": "PART_OF"},
+        {"from": "The Office", "to": "relaxation", "type": "HELPS_WITH"}
+    ]
+}
+
+Input: "I take my medication Lipitor 20mg every morning with breakfast"
+Output:
+{
+    "entities": [
+        {"name": "Lipitor 20mg", "type": "Health"},
+        {"name": "medication routine", "type": "Habit"},
+        {"name": "every morning", "type": "Temporal"},
+        {"name": "breakfast", "type": "Event"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Lipitor 20mg", "type": "TAKES_MEDICATION"},
+        {"from": "Lipitor 20mg", "to": "every morning", "type": "TAKEN_AT"},
+        {"from": "Lipitor 20mg", "to": "breakfast", "type": "TAKEN_WITH"}
+    ]
+}
+
+Input: "My brother Mark lives in Seattle and works as a software engineer at Microsoft"
+Output:
+{
+    "entities": [
+        {"name": "Mark", "type": "Person"},
+        {"name": "Seattle", "type": "Location"},
+        {"name": "software engineer", "type": "Skill"},
+        {"name": "Microsoft", "type": "Organization"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "Mark", "type": "SIBLING_OF"},
+        {"from": "Mark", "to": "Seattle", "type": "LIVES_IN"},
+        {"from": "Mark", "to": "software engineer", "type": "WORKS_AS"},
+        {"from": "Mark", "to": "Microsoft", "type": "WORKS_AT"}
+    ]
+}
+
+Input: "I play tennis twice a week at Riverside Courts with my friend Tom"
+Output:
+{
+    "entities": [
+        {"name": "tennis", "type": "Hobby"},
+        {"name": "twice a week", "type": "Temporal"},
+        {"name": "Riverside Courts", "type": "Venue"},
+        {"name": "Tom", "type": "Person"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "tennis", "type": "PLAYS"},
+        {"from": "tennis", "to": "twice a week", "type": "FREQUENCY"},
+        {"from": "tennis", "to": "Riverside Courts", "type": "PLAYED_AT"},
+        {"from": "Person", "to": "Tom", "type": "PLAYS_WITH"},
+        {"from": "Person", "to": "Tom", "type": "FRIENDS_WITH"}
+    ]
+}
+
+Extract all entities and relationships from the conversation. Return valid JSON only.
 """
 
 CUSTOM_UPDATE_MEMORY_PROMPT = """You are a smart memory manager which controls the memory of a system.
