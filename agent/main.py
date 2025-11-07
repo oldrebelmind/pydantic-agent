@@ -71,11 +71,15 @@ IMPORTANT:
 - Extract financial information: subscriptions, purchases, costs
 - Extract ALL temporal information: dates, times, schedules, frequencies
 
+OUTPUT FORMAT:
+Return your response as valid JSON with the following structure:
+{"facts": ["fact1", "fact2", ...]}
+
 Format:
 user: <user message>
 assistant: <ignore this>
 
-Extract from user line. Questions return empty.
+Extract from user line. Questions return empty. Always respond with JSON.
 
 Examples:
 
@@ -1434,6 +1438,16 @@ class PydanticAIAgent:
                     },
                     "custom_prompt": CUSTOM_ENTITY_EXTRACTION_PROMPT,
                 },
+                "llm": {
+                    "provider": "openai",
+                    "config": {
+                        "model": "gpt-4o-mini",
+                        "temperature": 0,
+                        "max_tokens": 2000,
+                        "api_key": config.OPENAI_GRAPH_API_KEY,
+                        "openai_base_url": "https://api.openai.com/v1",
+                    }
+                },
                 "custom_fact_extraction_prompt": CUSTOM_FACT_EXTRACTION_PROMPT,
                 "custom_update_memory_prompt": CUSTOM_UPDATE_MEMORY_PROMPT,
             }
@@ -1707,13 +1721,13 @@ class PydanticAIAgent:
             current_datetime = now_local.strftime("%A, %B %d, %Y at %I:%M %p %Z")
             timezone_name = now_local.tzname()
 
-            return f"\n[Current Time]: {current_datetime} (Your timezone: {timezone_name}) {time_source}\n"
+            return f"\n[Context - Current time available if needed]: {current_datetime} in {timezone_name}. Only mention time if the user asks about it or if it's directly relevant to their question.\n"
 
         except Exception as e:
             logger.error(f"Error converting to timezone {timezone_str}: {e}")
             # Fallback to UTC
             current_datetime = now_utc.strftime("%A, %B %d, %Y at %I:%M %p UTC")
-            return f"\n[Current Time]: {current_datetime} {time_source}\n"
+            return f"\n[Context - Current time available if needed]: {current_datetime}. Only mention time if the user asks about it or if it's directly relevant to their question.\n"
 
     def _get_memory_context(self, user_input: str) -> str:
         """
