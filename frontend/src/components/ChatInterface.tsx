@@ -11,6 +11,9 @@ import { fetchGeolocation, GeolocationData } from "@/lib/geolocation";
 import MessageBubble from "./MessageBubble";
 import StreamingMessage from "./StreamingMessage";
 
+// Limit messages to prevent memory leaks
+const MAX_MESSAGES = 100;
+
 export default function ChatInterface() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -39,7 +42,6 @@ export default function ChatInterface() {
         };
 
         setLocationContext(context);
-        console.log('[CHAT] Location context loaded:', context);
       }
     };
 
@@ -66,7 +68,11 @@ export default function ChatInterface() {
       timestamp: new Date(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    setMessages((prev) => {
+      const newMessages = [...prev, userMessage];
+      // Keep only last MAX_MESSAGES to prevent memory leaks
+      return newMessages.slice(-MAX_MESSAGES);
+    });
     setInput("");
     setError(null);
     setIsStreaming(true);
@@ -88,7 +94,11 @@ export default function ChatInterface() {
           timestamp: new Date(),
         };
 
-        setMessages((prev) => [...prev, assistantMessage]);
+        setMessages((prev) => {
+          const newMessages = [...prev, assistantMessage];
+          // Keep only last MAX_MESSAGES to prevent memory leaks
+          return newMessages.slice(-MAX_MESSAGES);
+        });
         setStreamingContent("");
         streamingContentRef.current = "";
         setIsStreaming(false);
