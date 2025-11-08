@@ -7,8 +7,8 @@ httpx>=0.27.2
 openai>=1.54.4
 
 # Memory Management
-# Install from GitHub main branch to get latest bug fixes not yet released to PyPI
-git+https://github.com/mem0ai/mem0.git@main
+# Using stable PyPI release (1.0.0) to avoid GitHub main branch bugs with NONE event vector handling
+mem0ai==1.0.0
 pymilvus>=2.3.0
 ollama>=0.1.0
 neo4j>=5.14.0

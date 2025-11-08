@@ -1453,7 +1453,43 @@ class PydanticAIAgent:
             }
 
             memory = Memory.from_config(memory_config)
-            logger.info("Mem0 initialized successfully with Milvus, Neo4j GraphRAG, and Ollama embeddings (GitHub main)")
+
+            # Monkey patch Milvus vector store to handle None vectors gracefully
+            # This works around a mem0ai bug where 'NONE' events try to upsert with vectors=None
+            if hasattr(memory, 'vector_store') and memory.vector_store:
+                vector_store = memory.vector_store
+                original_insert = vector_store.insert
+
+                def patched_insert(vectors, payloads=None, ids=None):
+                    """Wrapper that filters out None vectors before insert"""
+                    if vectors is None:
+                        logger.debug("Skipping Milvus insert with None vectors (mem0ai 'NONE' event workaround)")
+                        return []
+
+                    # Filter out None values if vectors is a list
+                    if isinstance(vectors, list):
+                        filtered_data = []
+                        for i, vec in enumerate(vectors):
+                            if vec is not None:
+                                filtered_data.append((vec, payloads[i] if payloads else None, ids[i] if ids else None))
+                            else:
+                                logger.debug(f"Skipping None vector at index {i}")
+
+                        if not filtered_data:
+                            return []
+
+                        vectors = [item[0] for item in filtered_data]
+                        if payloads:
+                            payloads = [item[1] for item in filtered_data]
+                        if ids:
+                            ids = [item[2] for item in filtered_data]
+
+                    return original_insert(vectors, payloads, ids)
+
+                vector_store.insert = patched_insert
+                logger.info("Applied Milvus None-vector workaround for mem0ai 'NONE' event bug")
+
+            logger.info("Mem0 initialized successfully with Milvus, Neo4j GraphRAG, and Ollama embeddings")
             return memory
 
         except Exception as e:

@@ -119,10 +119,15 @@ services:
     container_name: langfuse-server
     depends_on:
       - langfuse-db
+      - langfuse-clickhouse
     ports:
       - "4000:3000"
     environment:
       - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      - CLICKHOUSE_URL=http://langfuse-clickhouse:8123
+      - CLICKHOUSE_MIGRATION_URL=clickhouse://langfuse-clickhouse:9000
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=clickhouse
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-your-secret-key-change-in-production}
       - NEXTAUTH_URL=http://localhost:4000
       - SALT=${SALT:-your-salt-change-in-production}
@@ -143,6 +148,20 @@ services:
     networks:
       - agent-network
 
+  # ClickHouse Database for Langfuse
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    container_name: langfuse-clickhouse
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+      - CLICKHOUSE_PASSWORD=clickhouse
+    volumes:
+      - langfuse_clickhouse:/var/lib/clickhouse
+    networks:
+      - agent-network
+
 networks:
   agent-network:
     driver: bridge
@@ -152,3 +171,4 @@ volumes:
   minio_data:
   milvus_data:
   langfuse_db:
+  langfuse_clickhouse:
