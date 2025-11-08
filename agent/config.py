@@ -19,10 +19,12 @@ class Config:
     OLLAMA_MODEL: str = os.getenv('OLLAMA_MODEL', 'llama3.2')
     OLLAMA_TIMEOUT: int = int(os.getenv('OLLAMA_TIMEOUT', '120'))
 
-    # Milvus Configuration (for Mem0)
-    MILVUS_HOST: str = os.getenv('MILVUS_HOST', 'localhost')
-    MILVUS_PORT: int = int(os.getenv('MILVUS_PORT', '19530'))
-    MILVUS_COLLECTION: str = os.getenv('MILVUS_COLLECTION', 'agent_memory')
+    # PostgreSQL Configuration (for pgvector/Mem0)
+    POSTGRES_HOST: str = os.getenv('POSTGRES_HOST', 'localhost')
+    POSTGRES_PORT: int = int(os.getenv('POSTGRES_PORT', '5432'))
+    POSTGRES_DB: str = os.getenv('POSTGRES_DB', 'agent_memory')
+    POSTGRES_USER: str = os.getenv('POSTGRES_USER', 'postgres')
+    POSTGRES_PASSWORD: str = os.getenv('POSTGRES_PASSWORD', 'postgres')
 
     # Mem0 Configuration
     MEM0_USER_ID: str = os.getenv('MEM0_USER_ID', 'default_user')
@@ -85,7 +87,7 @@ class Config:
         print("\n=== Agent Configuration ===")
         print(f"Ollama Host: {cls.OLLAMA_HOST}")
         print(f"Ollama Model: {cls.OLLAMA_MODEL}")
-        print(f"Milvus: {cls.MILVUS_HOST}:{cls.MILVUS_PORT}")
+        print(f"PostgreSQL: {cls.POSTGRES_HOST}:{cls.POSTGRES_PORT}")
         print(f"Neo4j: {cls.NEO4J_URI}")
         print(f"Langfuse Enabled: {cls.LANGFUSE_ENABLED}")
         print(f"Guardrails Enabled: {cls.GUARDRAILS_ENABLED}")

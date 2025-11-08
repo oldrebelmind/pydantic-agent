@@ -1402,11 +1402,13 @@ class PydanticAIAgent:
                     }
                 },
                 "vector_store": {
-                    "provider": "milvus",
+                    "provider": "pgvector",
                     "config": {
-                        "url": f"http://{config.MILVUS_HOST}:{config.MILVUS_PORT}",
-                        "token": "",  # Empty token for local Milvus standalone
-                        "collection_name": config.MILVUS_COLLECTION,
+                        "dbname": config.POSTGRES_DB,
+                        "user": config.POSTGRES_USER,
+                        "password": config.POSTGRES_PASSWORD,
+                        "host": config.POSTGRES_HOST,
+                        "port": config.POSTGRES_PORT,
                         "embedding_model_dims": 768,
                     }
                 },
@@ -1454,42 +1456,168 @@ class PydanticAIAgent:
 
             memory = Memory.from_config(memory_config)
 
-            # Monkey patch Milvus vector store to handle None vectors gracefully
-            # This works around a mem0ai bug where 'NONE' events try to upsert with vectors=None
-            if hasattr(memory, 'vector_store') and memory.vector_store:
-                vector_store = memory.vector_store
-                original_insert = vector_store.insert
+            # Add detailed logging for graph extraction
+            if memory.enable_graph and memory.graph:
+                logger.info("Patching graph methods for detailed logging...")
 
-                def patched_insert(vectors, payloads=None, ids=None):
-                    """Wrapper that filters out None vectors before insert"""
-                    if vectors is None:
-                        logger.debug("Skipping Milvus insert with None vectors (mem0ai 'NONE' event workaround)")
-                        return []
+                # Patch the graph.add method
+                original_graph_add = memory.graph.add
 
-                    # Filter out None values if vectors is a list
-                    if isinstance(vectors, list):
-                        filtered_data = []
-                        for i, vec in enumerate(vectors):
-                            if vec is not None:
-                                filtered_data.append((vec, payloads[i] if payloads else None, ids[i] if ids else None))
-                            else:
-                                logger.debug(f"Skipping None vector at index {i}")
+                def logged_graph_add(data, filters):
+                    logger.info(f"[GRAPH] Starting graph.add() with data length: {len(data)}, filters: {filters}")
+                    try:
+                        result = original_graph_add(data, filters)
+                        logger.info(f"[GRAPH] graph.add() completed successfully: {result}")
+                        return result
+                    except Exception as e:
+                        logger.error(f"[GRAPH] graph.add() failed with error: {e}", exc_info=True)
+                        raise
 
-                        if not filtered_data:
-                            return []
+                memory.graph.add = logged_graph_add
 
-                        vectors = [item[0] for item in filtered_data]
-                        if payloads:
-                            payloads = [item[1] for item in filtered_data]
-                        if ids:
-                            ids = [item[2] for item in filtered_data]
+                # Patch the _retrieve_nodes_from_data method to log entity extraction
+                if hasattr(memory.graph, '_retrieve_nodes_from_data'):
+                    original_retrieve = memory.graph._retrieve_nodes_from_data
 
-                    return original_insert(vectors, payloads, ids)
+                    def logged_retrieve(data, filters):
+                        logger.info(f"[GRAPH] Extracting entities from data: {data[:100]}...")
+                        try:
+                            result = original_retrieve(data, filters)
+                            logger.info(f"[GRAPH] Entity extraction result: {result}")
+                            return result
+                        except Exception as e:
+                            logger.error(f"[GRAPH] Entity extraction failed: {e}", exc_info=True)
+                            raise
 
-                vector_store.insert = patched_insert
-                logger.info("Applied Milvus None-vector workaround for mem0ai 'NONE' event bug")
+                    memory.graph._retrieve_nodes_from_data = logged_retrieve
 
-            logger.info("Mem0 initialized successfully with Milvus, Neo4j GraphRAG, and Ollama embeddings")
+                # Patch the LLM generate_response to log OpenAI calls
+                if hasattr(memory.graph, 'llm') and hasattr(memory.graph.llm, 'generate_response'):
+                    original_generate = memory.graph.llm.generate_response
+
+                    def logged_generate(messages, tools=None, tool_choice="auto"):
+                        logger.info(f"[GRAPH LLM] Calling OpenAI with messages: {messages}")
+                        logger.info(f"[GRAPH LLM] Tools: {tools}")
+                        try:
+                            result = original_generate(messages, tools=tools, tool_choice=tool_choice)
+                            logger.info(f"[GRAPH LLM] OpenAI response: {result}")
+                            return result
+                        except Exception as e:
+                            logger.error(f"[GRAPH LLM] OpenAI call failed: {e}", exc_info=True)
+                            raise
+
+                    memory.graph.llm.generate_response = logged_generate
+
+                # Patch the _add_entities method to log Neo4j insertions
+                if hasattr(memory.graph, '_add_entities'):
+                    original_add_entities = memory.graph._add_entities
+
+                    def logged_add_entities(to_be_added, filters, entity_type_map):
+                        logger.info(f"[GRAPH] _add_entities called with:")
+                        logger.info(f"[GRAPH]   to_be_added: {to_be_added}")
+                        logger.info(f"[GRAPH]   filters: {filters}")
+                        logger.info(f"[GRAPH]   entity_type_map: {entity_type_map}")
+                        try:
+                            result = original_add_entities(to_be_added, filters, entity_type_map)
+                            logger.info(f"[GRAPH] _add_entities completed successfully: {result}")
+                            return result
+                        except Exception as e:
+                            logger.error(f"[GRAPH] _add_entities failed: {e}", exc_info=True)
+                            raise
+
+                    memory.graph._add_entities = logged_add_entities
+
+                # Patch the _establish_nodes_relations_from_data method to fix OpenAI content field bug
+                if hasattr(memory.graph, '_establish_nodes_relations_from_data'):
+                    import json
+                    original_establish = memory.graph._establish_nodes_relations_from_data
+
+                    def fixed_establish(data, filters, entity_type_map):
+                        """Fixed version that handles both tool_calls and content field responses"""
+                        logger.info(f"[GRAPH] _establish_nodes_relations_from_data called with:")
+                        logger.info(f"[GRAPH]   data: {data[:200]}...")
+                        logger.info(f"[GRAPH]   entity_type_map: {entity_type_map}")
+
+                        try:
+                            # Try the original method first
+                            result = original_establish(data, filters, entity_type_map)
+                            logger.info(f"[GRAPH] _establish_nodes_relations_from_data result: {result}")
+
+                            # If result is empty, it might be due to the OpenAI content field bug
+                            # In this case, we need to manually call the LLM and parse the response
+                            if not result and hasattr(memory.graph, 'llm'):
+                                logger.warning("[GRAPH] Original method returned empty result, attempting manual parsing...")
+
+                                # Reconstruct the same call that the original method makes
+                                user_identity = f"user_id: {filters['user_id']}"
+                                if filters.get("agent_id"):
+                                    user_identity += f", agent_id: {filters['agent_id']}"
+                                if filters.get("run_id"):
+                                    user_identity += f", run_id: {filters['run_id']}"
+
+                                # Import the prompt and tool from mem0
+                                from mem0.graphs.utils import EXTRACT_RELATIONS_PROMPT
+                                from mem0.graphs.tools import RELATIONS_TOOL
+
+                                system_content = EXTRACT_RELATIONS_PROMPT.replace("USER_ID", user_identity)
+                                messages = [
+                                    {"role": "system", "content": system_content},
+                                    {"role": "user", "content": f"List of entities: {list(entity_type_map.keys())}. \n\nText: {data}"},
+                                ]
+
+                                # Call OpenAI
+                                extracted_entities = memory.graph.llm.generate_response(
+                                    messages=messages,
+                                    tools=[RELATIONS_TOOL],
+                                )
+
+                                logger.info(f"[GRAPH] Manual OpenAI response: {extracted_entities}")
+
+                                # Parse response - check both tool_calls and content field
+                                entities = []
+                                if extracted_entities.get("tool_calls"):
+                                    entities = extracted_entities["tool_calls"][0].get("arguments", {}).get("entities", [])
+                                    logger.info(f"[GRAPH] Parsed from tool_calls: {entities}")
+                                elif extracted_entities.get("content"):
+                                    # OpenAI returned JSON in content field instead of tool call
+                                    try:
+                                        content_json = json.loads(extracted_entities["content"])
+                                        if "entities" in content_json:
+                                            # Transform the format from {"name": "X", "type": "Y"} to mem0's expected format
+                                            raw_entities = content_json["entities"]
+                                            relationships = content_json.get("relationships", [])
+
+                                            # Build entities list in mem0 format
+                                            entities = []
+                                            for rel in relationships:
+                                                entities.append({
+                                                    "source": rel.get("from"),
+                                                    "relationship": rel.get("type"),
+                                                    "destination": rel.get("to")
+                                                })
+
+                                            logger.info(f"[GRAPH] Parsed from content field: {entities}")
+                                    except json.JSONDecodeError as e:
+                                        logger.error(f"[GRAPH] Failed to parse JSON from content field: {e}")
+
+                                # Remove spaces from entities (same as original method)
+                                if hasattr(memory.graph, '_remove_spaces_from_entities'):
+                                    entities = memory.graph._remove_spaces_from_entities(entities)
+
+                                logger.info(f"[GRAPH] Fixed result: {entities}")
+                                return entities
+
+                            return result
+
+                        except Exception as e:
+                            logger.error(f"[GRAPH] _establish_nodes_relations_from_data failed: {e}", exc_info=True)
+                            raise
+
+                    memory.graph._establish_nodes_relations_from_data = fixed_establish
+
+                logger.info("Graph logging patches applied successfully")
+
+            logger.info("Mem0 initialized successfully with pgvector, Neo4j GraphRAG, and Ollama embeddings")
             return memory
 
         except Exception as e:
@@ -1861,11 +1989,14 @@ class PydanticAIAgent:
 
         try:
             logger.info(f"Saving conversation to memory (async background task)...")
+            logger.info(f"Memory enable_graph: {self.memory.enable_graph}")
+            if hasattr(self.memory, 'graph') and self.memory.graph:
+                logger.info(f"Memory graph object exists: {type(self.memory.graph)}")
 
             # Run the blocking memory.add() call in a thread pool executor
             # to prevent blocking the event loop
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
+            result = await loop.run_in_executor(
                 None,  # Use default executor
                 lambda: self.memory.add(
                     messages=[
@@ -1878,6 +2009,23 @@ class PydanticAIAgent:
                     infer=True,  # Enable LLM-based fact extraction with custom prompt
                 )
             )
+
+            logger.info(f"Memory add result: {result}")
+
+            # Log graph extraction results
+            if isinstance(result, dict):
+                if 'results' in result:
+                    logger.info(f"Vector store results: {len(result['results'])} memories")
+                if 'relations' in result:
+                    logger.info(f"Graph store relations: {result['relations']}")
+                    if result['relations']:
+                        if 'added_entities' in result['relations']:
+                            logger.info(f"Added entities: {result['relations']['added_entities']}")
+                        if 'deleted_entities' in result['relations']:
+                            logger.info(f"Deleted entities: {result['relations']['deleted_entities']}")
+                    else:
+                        logger.warning("Graph relations returned empty/None - graph extraction may have failed")
+
             logger.info(f"Conversation saved to memory successfully (background task completed)")
 
         except Exception as e:
