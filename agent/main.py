@@ -544,6 +544,12 @@ Return: {"facts": [...]}
 
 CUSTOM_ENTITY_EXTRACTION_PROMPT = """You are an expert at extracting entities and their relationships from conversations about IT infrastructure, MSP operations, technical workflows, and personal contexts.
 
+CRITICAL EXTRACTION RULES:
+1. **Extract ONLY from USER messages** - DO NOT extract entities or relationships from assistant/agent responses
+2. **Use conversation context** - If a user mentions "town" or "city" without naming it, look at previous context (company location, etc.) to infer which city
+3. **Create hierarchical location relationships** - When extracting neighborhoods/areas (like "north side of town"), ALWAYS link them to the parent city using PART_OF relationship
+4. **Ignore agent responses** - Messages like "I don't have that information" should be completely ignored for extraction
+
 Extract ONLY concrete entities and their relationships. Break down compound information into separate entities and relationships.
 
 ENTITY TYPES:
@@ -696,6 +702,20 @@ Output:
     ],
     "relationships": [
         {"from": "Person", "to": "north side of Indianapolis", "type": "LIVES_IN"},
+        {"from": "north side of Indianapolis", "to": "Indianapolis", "type": "PART_OF"}
+    ]
+}
+
+Input: "I live and work on the north side of town" (Context: User's company is in Indianapolis)
+Output:
+{
+    "entities": [
+        {"name": "Indianapolis", "type": "Location"},
+        {"name": "north side of Indianapolis", "type": "Location"}
+    ],
+    "relationships": [
+        {"from": "Person", "to": "north side of Indianapolis", "type": "LIVES_IN"},
+        {"from": "Person", "to": "north side of Indianapolis", "type": "WORKS_FROM"},
         {"from": "north side of Indianapolis", "to": "Indianapolis", "type": "PART_OF"}
     ]
 }
@@ -1427,6 +1447,7 @@ class PydanticAIAgent:
                         "username": config.NEO4J_USERNAME,
                         "password": config.NEO4J_PASSWORD,
                         "database": config.NEO4J_DATABASE,
+                        "threshold": 0.7,  # Confidence threshold for relationship extraction (0.0-1.0)
                     },
                     "llm": {
                         "provider": "openai",
@@ -1508,24 +1529,60 @@ class PydanticAIAgent:
 
                     memory.graph.llm.generate_response = logged_generate
 
-                # Patch the _add_entities method to log Neo4j insertions
+                # Patch the _add_entities method to add hierarchical location relationships
                 if hasattr(memory.graph, '_add_entities'):
                     original_add_entities = memory.graph._add_entities
 
-                    def logged_add_entities(to_be_added, filters, entity_type_map):
+                    def enhanced_add_entities(to_be_added, filters, entity_type_map):
                         logger.info(f"[GRAPH] _add_entities called with:")
                         logger.info(f"[GRAPH]   to_be_added: {to_be_added}")
                         logger.info(f"[GRAPH]   filters: {filters}")
                         logger.info(f"[GRAPH]   entity_type_map: {entity_type_map}")
+
+                        # Add hierarchical location relationships automatically
+                        # Look for patterns like "north_side_of_town" + "indianapolis" (both locations)
+                        enhanced_relationships = list(to_be_added) if to_be_added else []
+
+                        # Find all location entities
+                        locations = {entity: etype for entity, etype in entity_type_map.items()
+                                   if etype in ['location', 'city', 'place']}
+
+                        logger.info(f"[GRAPH] Found {len(locations)} location entities: {list(locations.keys())}")
+
+                        # Auto-link neighborhood/area patterns to cities
+                        neighborhood_patterns = ['north_side_of_', 'south_side_of_', 'east_side_of_', 'west_side_of_',
+                                               'downtown_', 'uptown_', '_neighborhood', '_district']
+
+                        for neighborhood in locations.keys():
+                            # Check if this looks like a neighborhood/area
+                            is_neighborhood = any(pattern in neighborhood for pattern in neighborhood_patterns)
+
+                            if is_neighborhood or 'side_of_town' in neighborhood:
+                                # Find city entities to link to
+                                for city in locations.keys():
+                                    if city != neighborhood and 'side' not in city and 'town' not in city:
+                                        # Check if this city is mentioned in the same extraction
+                                        # Add PART_OF relationship
+                                        part_of_rel = {
+                                            'source': neighborhood,
+                                            'relationship': 'part_of',
+                                            'destination': city
+                                        }
+
+                                        # Only add if not already present
+                                        if part_of_rel not in enhanced_relationships:
+                                            enhanced_relationships.append(part_of_rel)
+                                            logger.info(f"[GRAPH] Auto-added hierarchical relationship: {neighborhood} --[part_of]--> {city}")
+
                         try:
-                            result = original_add_entities(to_be_added, filters, entity_type_map)
+                            result = original_add_entities(enhanced_relationships, filters, entity_type_map)
                             logger.info(f"[GRAPH] _add_entities completed successfully: {result}")
                             return result
                         except Exception as e:
                             logger.error(f"[GRAPH] _add_entities failed: {e}", exc_info=True)
                             raise
 
-                    memory.graph._add_entities = logged_add_entities
+                    memory.graph._add_entities = enhanced_add_entities
 
                 # Patch the _establish_nodes_relations_from_data method to fix OpenAI content field bug
                 if hasattr(memory.graph, '_establish_nodes_relations_from_data'):
@@ -1919,10 +1976,52 @@ class PydanticAIAgent:
             # Mem0 1.0.0 returns {'results': [...]} format
             if memories and isinstance(memories, dict):
                 memory_list = memories.get('results', [])
+                relations = memories.get('relations', [])
             elif memories and isinstance(memories, list):
                 memory_list = memories
+                relations = []
             else:
                 memory_list = []
+                relations = []
+
+            # CUSTOM GRAPH TRAVERSAL: Enrich relations with multi-hop paths
+            # mem0's search only returns 1-hop relationships, we need to traverse deeper
+            if hasattr(self.memory, 'graph') and self.memory.graph:
+                try:
+                    from neo4j import GraphDatabase
+
+                    driver = GraphDatabase.driver(
+                        config.NEO4J_URI,
+                        auth=(config.NEO4J_USERNAME, config.NEO4J_PASSWORD)
+                    )
+
+                    with driver.session(database=config.NEO4J_DATABASE) as session:
+                        # Find all location hierarchies (e.g., north_side_of_town -> Indianapolis)
+                        cypher_query = '''
+                        MATCH (start)-[r1:lives_on|works_on|located_in|based_in]->(middle)-[r2:part_of]->(end)
+                        WHERE start.user_id = $user_id
+                        RETURN start.name as start_name, type(r1) as rel1,
+                               middle.name as middle_name, type(r2) as rel2,
+                               end.name as end_name
+                        '''
+
+                        result = session.run(cypher_query, user_id=config.MEM0_USER_ID)
+                        traversal_facts = []
+
+                        for record in result:
+                            # Format: "lives on north side of town, which is part of Indianapolis"
+                            fact = f"{record['start_name']} {record['rel1'].replace('_', ' ')} {record['middle_name']}, which is {record['rel2'].replace('_', ' ')} {record['end_name']}"
+                            traversal_facts.append(fact)
+                            logger.info(f"[GRAPH TRAVERSAL] Found: {fact}")
+
+                    driver.close()
+
+                    # Add traversal facts to memory list
+                    for fact in traversal_facts:
+                        memory_list.append({'memory': fact, 'score': 1.0})
+
+                except Exception as e:
+                    logger.warning(f"Graph traversal failed: {e}")
 
             if memory_list:
                 context = "\n[Previous Context]:\n"
@@ -1995,6 +2094,9 @@ class PydanticAIAgent:
 
             # Run the blocking memory.add() call in a thread pool executor
             # to prevent blocking the event loop
+            #
+            # Per mem0 documentation, we pass the full conversation (both user and assistant messages)
+            # Our custom_prompt should filter out extraction from assistant responses
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 None,  # Use default executor
