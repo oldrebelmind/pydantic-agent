@@ -14,6 +14,7 @@ import json
 import logging
 from datetime import datetime
 from hybrid_memory import HybridMemoryManager
+from main import CUSTOM_FACT_EXTRACTION_PROMPT, CUSTOM_UPDATE_MEMORY_PROMPT
 
 # Setup logging
 logging.basicConfig(
@@ -57,6 +58,8 @@ mem0_config = {
             "embedding_dims": 768,
         }
     },
+    "custom_fact_extraction_prompt": CUSTOM_FACT_EXTRACTION_PROMPT,
+    "custom_update_memory_prompt": CUSTOM_UPDATE_MEMORY_PROMPT,
 }
 
 
