@@ -22,6 +22,7 @@ except ImportError:
 
 # Mem0 for long-term memory
 from mem0 import Memory
+from hybrid_memory import HybridMemoryManager
 
 # Langfuse for observability
 from langfuse import Langfuse
@@ -59,27 +60,22 @@ logger = setup_logging(config.LOG_LEVEL)
 # Custom fact extraction prompt for Mem0
 # Note: This works best with larger models (8B+). With smaller models like llama3.2 (3B),
 # some facts from assistant messages may be incorrectly extracted.
-CUSTOM_FACT_EXTRACTION_PROMPT = """You extract facts from the user line only. Extract ALL specific details separately.
-
-IMPORTANT:
-- Extract location details with full specificity (city, neighborhood, area, side of town)
-- Break down compound statements into separate facts
-- Preserve exact details like addresses, neighborhoods, districts
-- Extract preferences, habits, and contextual information
-- Extract tool usage, technical actions, and infrastructure details
-- Extract personal information: hobbies, health, relationships, goals
-- Extract financial information: subscriptions, purchases, costs
-- Extract ALL temporal information: dates, times, schedules, frequencies
-
-OUTPUT FORMAT:
-Return your response as valid JSON with the following structure:
+CUSTOM_FACT_EXTRACTION_PROMPT = """CRITICAL: You MUST return ONLY this exact JSON structure. NO other formats allowed:
 {"facts": ["fact1", "fact2", ...]}
 
-Format:
-user: <user message>
-assistant: <ignore this>
+Extract facts from the user message. Each fact should be a separate string in the "facts" array.
 
-Extract from user line. Questions return empty. Always respond with JSON.
+RULES:
+1. ALWAYS include the "facts" key - even if empty: {"facts": []}
+2. Extract location details with full specificity (city, neighborhood, area)
+3. Break down compound statements into separate facts
+4. Extract personal info, preferences, actions, tools, dates, times
+5. User questions return empty array: {"facts": []}
+
+MANDATORY OUTPUT FORMAT - MUST USE THIS EXACT STRUCTURE:
+{"facts": ["string1", "string2", ...]}
+
+NO OTHER JSON STRUCTURES ARE ALLOWED. The response MUST have a "facts" key with an array value.
 
 Examples:
 
@@ -1404,21 +1400,25 @@ class PydanticAIAgent:
 
         logger.info("Agent initialization complete!")
 
-    def _initialize_memory(self) -> Optional[Memory]:
+    def _initialize_memory(self) -> Optional[HybridMemoryManager]:
         """
-        Initialize Mem0 with Qdrant backend
+        Initialize Hybrid Memory Manager (mem0 for vectors + Graphiti for graph)
 
         Returns:
-            Memory instance or None if initialization fails
+            HybridMemoryManager instance or None if initialization fails
         """
         try:
-            # Use Ollama for both LLM and embeddings
-            memory_config = {
+            # mem0 config (vector store only, no graph)
+            # Use OpenAI for LLM (better instruction following for custom prompts)
+            # Use Ollama for embeddings (fast and local)
+            mem0_config = {
                 "llm": {
-                    "provider": "ollama",
+                    "provider": "openai",
                     "config": {
-                        "model": config.OLLAMA_MODEL,
-                        "ollama_base_url": config.OLLAMA_HOST,
+                        "model": "gpt-4o-mini",  # Cost-effective for fact extraction
+                        "api_key": config.OPENAI_GRAPH_API_KEY,
+                        "openai_base_url": "https://api.openai.com/v1",  # Explicit base URL
+                        "temperature": 0.1,  # Low temp for consistent fact extraction
                     }
                 },
                 "vector_store": {
@@ -1440,247 +1440,43 @@ class PydanticAIAgent:
                         "embedding_dims": 768,
                     }
                 },
-                "graph_store": {
-                    "provider": "neo4j",
-                    "config": {
-                        "url": config.NEO4J_URI,
-                        "username": config.NEO4J_USERNAME,
-                        "password": config.NEO4J_PASSWORD,
-                        "database": config.NEO4J_DATABASE,
-                        "threshold": 0.7,  # Confidence threshold for relationship extraction (0.0-1.0)
-                    },
-                    "llm": {
-                        "provider": "openai",
-                        "config": {
-                            "model": "gpt-4o-mini",
-                            "temperature": 0,
-                            "max_tokens": 2000,
-                            "api_key": config.OPENAI_GRAPH_API_KEY,
-                            "openai_base_url": "https://api.openai.com/v1",
-                        }
-                    },
-                    "custom_prompt": CUSTOM_ENTITY_EXTRACTION_PROMPT,
-                },
-                "llm": {
-                    "provider": "openai",
-                    "config": {
-                        "model": "gpt-4o-mini",
-                        "temperature": 0,
-                        "max_tokens": 2000,
-                        "api_key": config.OPENAI_GRAPH_API_KEY,
-                        "openai_base_url": "https://api.openai.com/v1",
-                    }
-                },
                 "custom_fact_extraction_prompt": CUSTOM_FACT_EXTRACTION_PROMPT,
                 "custom_update_memory_prompt": CUSTOM_UPDATE_MEMORY_PROMPT,
             }
 
-            memory = Memory.from_config(memory_config)
+            # Create hybrid memory manager
+            hybrid_memory = HybridMemoryManager(
+                mem0_config=mem0_config,
+                neo4j_uri=config.NEO4J_URI,
+                neo4j_username=config.NEO4J_USERNAME,
+                neo4j_password=config.NEO4J_PASSWORD,
+                openai_api_key=config.OPENAI_GRAPH_API_KEY
+            )
 
-            # Add detailed logging for graph extraction
-            if memory.enable_graph and memory.graph:
-                logger.info("Patching graph methods for detailed logging...")
-
-                # Patch the graph.add method
-                original_graph_add = memory.graph.add
-
-                def logged_graph_add(data, filters):
-                    logger.info(f"[GRAPH] Starting graph.add() with data length: {len(data)}, filters: {filters}")
-                    try:
-                        result = original_graph_add(data, filters)
-                        logger.info(f"[GRAPH] graph.add() completed successfully: {result}")
-                        return result
-                    except Exception as e:
-                        logger.error(f"[GRAPH] graph.add() failed with error: {e}", exc_info=True)
-                        raise
-
-                memory.graph.add = logged_graph_add
-
-                # Patch the _retrieve_nodes_from_data method to log entity extraction
-                if hasattr(memory.graph, '_retrieve_nodes_from_data'):
-                    original_retrieve = memory.graph._retrieve_nodes_from_data
-
-                    def logged_retrieve(data, filters):
-                        logger.info(f"[GRAPH] Extracting entities from data: {data[:100]}...")
-                        try:
-                            result = original_retrieve(data, filters)
-                            logger.info(f"[GRAPH] Entity extraction result: {result}")
-                            return result
-                        except Exception as e:
-                            logger.error(f"[GRAPH] Entity extraction failed: {e}", exc_info=True)
-                            raise
-
-                    memory.graph._retrieve_nodes_from_data = logged_retrieve
-
-                # Patch the LLM generate_response to log OpenAI calls
-                if hasattr(memory.graph, 'llm') and hasattr(memory.graph.llm, 'generate_response'):
-                    original_generate = memory.graph.llm.generate_response
-
-                    def logged_generate(messages, tools=None, tool_choice="auto"):
-                        logger.info(f"[GRAPH LLM] Calling OpenAI with messages: {messages}")
-                        logger.info(f"[GRAPH LLM] Tools: {tools}")
-                        try:
-                            result = original_generate(messages, tools=tools, tool_choice=tool_choice)
-                            logger.info(f"[GRAPH LLM] OpenAI response: {result}")
-                            return result
-                        except Exception as e:
-                            logger.error(f"[GRAPH LLM] OpenAI call failed: {e}", exc_info=True)
-                            raise
-
-                    memory.graph.llm.generate_response = logged_generate
-
-                # Patch the _add_entities method to add hierarchical location relationships
-                if hasattr(memory.graph, '_add_entities'):
-                    original_add_entities = memory.graph._add_entities
-
-                    def enhanced_add_entities(to_be_added, filters, entity_type_map):
-                        logger.info(f"[GRAPH] _add_entities called with:")
-                        logger.info(f"[GRAPH]   to_be_added: {to_be_added}")
-                        logger.info(f"[GRAPH]   filters: {filters}")
-                        logger.info(f"[GRAPH]   entity_type_map: {entity_type_map}")
-
-                        # Add hierarchical location relationships automatically
-                        # Look for patterns like "north_side_of_town" + "indianapolis" (both locations)
-                        enhanced_relationships = list(to_be_added) if to_be_added else []
-
-                        # Find all location entities
-                        locations = {entity: etype for entity, etype in entity_type_map.items()
-                                   if etype in ['location', 'city', 'place']}
-
-                        logger.info(f"[GRAPH] Found {len(locations)} location entities: {list(locations.keys())}")
-
-                        # Auto-link neighborhood/area patterns to cities
-                        neighborhood_patterns = ['north_side_of_', 'south_side_of_', 'east_side_of_', 'west_side_of_',
-                                               'downtown_', 'uptown_', '_neighborhood', '_district']
-
-                        for neighborhood in locations.keys():
-                            # Check if this looks like a neighborhood/area
-                            is_neighborhood = any(pattern in neighborhood for pattern in neighborhood_patterns)
-
-                            if is_neighborhood or 'side_of_town' in neighborhood:
-                                # Find city entities to link to
-                                for city in locations.keys():
-                                    if city != neighborhood and 'side' not in city and 'town' not in city:
-                                        # Check if this city is mentioned in the same extraction
-                                        # Add PART_OF relationship
-                                        part_of_rel = {
-                                            'source': neighborhood,
-                                            'relationship': 'part_of',
-                                            'destination': city
-                                        }
-
-                                        # Only add if not already present
-                                        if part_of_rel not in enhanced_relationships:
-                                            enhanced_relationships.append(part_of_rel)
-                                            logger.info(f"[GRAPH] Auto-added hierarchical relationship: {neighborhood} --[part_of]--> {city}")
-
-                        try:
-                            result = original_add_entities(enhanced_relationships, filters, entity_type_map)
-                            logger.info(f"[GRAPH] _add_entities completed successfully: {result}")
-                            return result
-                        except Exception as e:
-                            logger.error(f"[GRAPH] _add_entities failed: {e}", exc_info=True)
-                            raise
-
-                    memory.graph._add_entities = enhanced_add_entities
-
-                # Patch the _establish_nodes_relations_from_data method to fix OpenAI content field bug
-                if hasattr(memory.graph, '_establish_nodes_relations_from_data'):
-                    import json
-                    original_establish = memory.graph._establish_nodes_relations_from_data
-
-                    def fixed_establish(data, filters, entity_type_map):
-                        """Fixed version that handles both tool_calls and content field responses"""
-                        logger.info(f"[GRAPH] _establish_nodes_relations_from_data called with:")
-                        logger.info(f"[GRAPH]   data: {data[:200]}...")
-                        logger.info(f"[GRAPH]   entity_type_map: {entity_type_map}")
-
-                        try:
-                            # Try the original method first
-                            result = original_establish(data, filters, entity_type_map)
-                            logger.info(f"[GRAPH] _establish_nodes_relations_from_data result: {result}")
-
-                            # If result is empty, it might be due to the OpenAI content field bug
-                            # In this case, we need to manually call the LLM and parse the response
-                            if not result and hasattr(memory.graph, 'llm'):
-                                logger.warning("[GRAPH] Original method returned empty result, attempting manual parsing...")
-
-                                # Reconstruct the same call that the original method makes
-                                user_identity = f"user_id: {filters['user_id']}"
-                                if filters.get("agent_id"):
-                                    user_identity += f", agent_id: {filters['agent_id']}"
-                                if filters.get("run_id"):
-                                    user_identity += f", run_id: {filters['run_id']}"
-
-                                # Import the prompt and tool from mem0
-                                from mem0.graphs.utils import EXTRACT_RELATIONS_PROMPT
-                                from mem0.graphs.tools import RELATIONS_TOOL
-
-                                system_content = EXTRACT_RELATIONS_PROMPT.replace("USER_ID", user_identity)
-                                messages = [
-                                    {"role": "system", "content": system_content},
-                                    {"role": "user", "content": f"List of entities: {list(entity_type_map.keys())}. \n\nText: {data}"},
-                                ]
-
-                                # Call OpenAI
-                                extracted_entities = memory.graph.llm.generate_response(
-                                    messages=messages,
-                                    tools=[RELATIONS_TOOL],
-                                )
-
-                                logger.info(f"[GRAPH] Manual OpenAI response: {extracted_entities}")
-
-                                # Parse response - check both tool_calls and content field
-                                entities = []
-                                if extracted_entities.get("tool_calls"):
-                                    entities = extracted_entities["tool_calls"][0].get("arguments", {}).get("entities", [])
-                                    logger.info(f"[GRAPH] Parsed from tool_calls: {entities}")
-                                elif extracted_entities.get("content"):
-                                    # OpenAI returned JSON in content field instead of tool call
-                                    try:
-                                        content_json = json.loads(extracted_entities["content"])
-                                        if "entities" in content_json:
-                                            # Transform the format from {"name": "X", "type": "Y"} to mem0's expected format
-                                            raw_entities = content_json["entities"]
-                                            relationships = content_json.get("relationships", [])
-
-                                            # Build entities list in mem0 format
-                                            entities = []
-                                            for rel in relationships:
-                                                entities.append({
-                                                    "source": rel.get("from"),
-                                                    "relationship": rel.get("type"),
-                                                    "destination": rel.get("to")
-                                                })
-
-                                            logger.info(f"[GRAPH] Parsed from content field: {entities}")
-                                    except json.JSONDecodeError as e:
-                                        logger.error(f"[GRAPH] Failed to parse JSON from content field: {e}")
-
-                                # Remove spaces from entities (same as original method)
-                                if hasattr(memory.graph, '_remove_spaces_from_entities'):
-                                    entities = memory.graph._remove_spaces_from_entities(entities)
-
-                                logger.info(f"[GRAPH] Fixed result: {entities}")
-                                return entities
-
-                            return result
-
-                        except Exception as e:
-                            logger.error(f"[GRAPH] _establish_nodes_relations_from_data failed: {e}", exc_info=True)
-                            raise
-
-                    memory.graph._establish_nodes_relations_from_data = fixed_establish
-
-                logger.info("Graph logging patches applied successfully")
-
-            logger.info("Mem0 initialized successfully with pgvector, Neo4j GraphRAG, and Ollama embeddings")
-            return memory
+            logger.info("Hybrid Memory Manager created (not initialized yet - call initialize_memory_async())")
+            return hybrid_memory
 
         except Exception as e:
-            logger.error(f"Failed to initialize Mem0: {e}")
+            logger.error(f"Failed to create Hybrid Memory Manager: {e}")
             print_system_message(f"Warning: Memory system unavailable - {e}", "yellow")
             return None
+
+    async def initialize_memory_async(self) -> None:
+        """
+        Async initialization of the hybrid memory system.
+        Must be called after __init__().
+        """
+        if self.memory is None:
+            logger.warning("Memory not created, skipping async initialization")
+            return
+
+        try:
+            logger.info("Initializing hybrid memory (async)...")
+            await self.memory.initialize()
+            logger.info("Hybrid memory initialized successfully!")
+        except Exception as e:
+            logger.error(f"Failed to initialize hybrid memory: {e}", exc_info=True)
+            self.memory = None
 
     def _initialize_langfuse(self) -> Optional[Langfuse]:
         """
@@ -1769,9 +1565,9 @@ class PydanticAIAgent:
             logger.warning(f"Failed to sync with NTP server: {e}. Using system time as fallback.")
             return None
 
-    def _get_user_timezone(self, location_context: dict | None = None) -> str:
+    async def _get_user_timezone(self, location_context: dict | None = None) -> str:
         """
-        Retrieve user's timezone preference from IP geolocation or Mem0 memory.
+        Retrieve user's timezone preference from IP geolocation or Hybrid memory.
 
         Priority:
         1. IP geolocation timezone (from location_context)
@@ -1827,15 +1623,15 @@ class PydanticAIAgent:
         try:
             # Search memory for timezone information
             logger.info("Searching for user timezone in memory...")
-            memories = self.memory.search(
+            memories = await self.memory.search(
                 query="user timezone preference location city",
                 user_id=config.MEM0_USER_ID,
                 limit=5
             )
 
-            # Parse memories to find timezone
+            # Parse memories from hybrid system (returns vector_results + graph_results)
             if memories and isinstance(memories, dict):
-                memory_list = memories.get('results', [])
+                memory_list = memories.get('vector_results', [])
             elif memories and isinstance(memories, list):
                 memory_list = memories
             else:
@@ -1876,7 +1672,8 @@ class PydanticAIAgent:
             # Fallback: Try get_all() to retrieve all memories if search didn't find location
             logger.info("Search didn't find timezone, trying get_all() as fallback...")
             try:
-                all_memories = self.memory.get_all(user_id=config.MEM0_USER_ID)
+                # Access mem0 directly for get_all (not available in hybrid interface)
+                all_memories = self.memory.mem0.get_all(user_id=config.MEM0_USER_ID) if self.memory.mem0 else None
                 if all_memories:
                     if isinstance(all_memories, dict):
                         all_memory_list = all_memories.get('results', [])
@@ -1950,101 +1747,50 @@ class PydanticAIAgent:
             current_datetime = now_utc.strftime("%A, %B %d, %Y at %I:%M %p UTC")
             return f"\n[Context - Current time available if needed]: {current_datetime}. Only mention time if the user asks about it or if it's directly relevant to their question.\n"
 
-    def _get_memory_context(self, user_input: str) -> str:
+    async def _get_memory_context(self, user_input: str) -> str:
         """
-        Retrieve relevant memories based on user input
+        Retrieve relevant memories based on user input using hybrid memory system.
 
         Args:
             user_input: Current user message
 
         Returns:
-            Memory context string
+            Memory context string combining vector and graph results
         """
         if not self.memory:
             return ""
 
         try:
-            # Search for relevant memories
-            logger.info(f"Searching memories for query: '{user_input}'")
-            memories = self.memory.search(
+            # Search hybrid memory (both vector and graph)
+            logger.info(f"Searching hybrid memory for query: '{user_input}'")
+            memories = await self.memory.search(
                 query=user_input,
                 user_id=config.MEM0_USER_ID,
                 limit=3
             )
-            logger.info(f"Found {len(memories) if memories else 0} memories: {memories}")
+            logger.info(f"Hybrid memory search returned: {len(memories.get('vector_results', []))} vector results, {len(memories.get('graph_results', []))} graph results")
 
-            # Mem0 1.0.0 returns {'results': [...]} format
+            # Hybrid memory returns {'vector_results': [...], 'graph_results': [...], 'combined_context': "..."}
+            # Use the pre-formatted combined_context from hybrid memory
             if memories and isinstance(memories, dict):
-                memory_list = memories.get('results', [])
-                relations = memories.get('relations', [])
-            elif memories and isinstance(memories, list):
-                memory_list = memories
-                relations = []
+                combined_context = memories.get('combined_context', '')
+                if combined_context:
+                    logger.info(f"Memory context created from hybrid search")
+                    logger.info(f"Returning context (length={len(combined_context)}): {combined_context[:300]}...")
+                    return combined_context
+                else:
+                    logger.warning("No memories found in hybrid search - combined_context is empty")
             else:
-                memory_list = []
-                relations = []
-
-            # CUSTOM GRAPH TRAVERSAL: Enrich relations with multi-hop paths
-            # mem0's search only returns 1-hop relationships, we need to traverse deeper
-            if hasattr(self.memory, 'graph') and self.memory.graph:
-                try:
-                    from neo4j import GraphDatabase
-
-                    driver = GraphDatabase.driver(
-                        config.NEO4J_URI,
-                        auth=(config.NEO4J_USERNAME, config.NEO4J_PASSWORD)
-                    )
-
-                    with driver.session(database=config.NEO4J_DATABASE) as session:
-                        # Find all location hierarchies (e.g., north_side_of_town -> Indianapolis)
-                        cypher_query = '''
-                        MATCH (start)-[r1:lives_on|works_on|located_in|based_in]->(middle)-[r2:part_of]->(end)
-                        WHERE start.user_id = $user_id
-                        RETURN start.name as start_name, type(r1) as rel1,
-                               middle.name as middle_name, type(r2) as rel2,
-                               end.name as end_name
-                        '''
-
-                        result = session.run(cypher_query, user_id=config.MEM0_USER_ID)
-                        traversal_facts = []
-
-                        for record in result:
-                            # Format: "lives on north side of town, which is part of Indianapolis"
-                            fact = f"{record['start_name']} {record['rel1'].replace('_', ' ')} {record['middle_name']}, which is {record['rel2'].replace('_', ' ')} {record['end_name']}"
-                            traversal_facts.append(fact)
-                            logger.info(f"[GRAPH TRAVERSAL] Found: {fact}")
-
-                    driver.close()
-
-                    # Add traversal facts to memory list
-                    for fact in traversal_facts:
-                        memory_list.append({'memory': fact, 'score': 1.0})
-
-                except Exception as e:
-                    logger.warning(f"Graph traversal failed: {e}")
-
-            if memory_list:
-                context = "\n[Previous Context]:\n"
-                for mem in memory_list:
-                    # Extract memory text from the result object
-                    if isinstance(mem, dict):
-                        mem_text = mem.get('memory', mem.get('text', str(mem)))
-                    else:
-                        mem_text = str(mem)
-                    context += f"- {mem_text}\n"
-                logger.info(f"Memory context created: {context}")
-                return context
-            else:
-                logger.warning("No memories found for this query")
+                logger.warning("Invalid memory search result format")
 
         except Exception as e:
             logger.error(f"Error retrieving memories: {e}", exc_info=True)
 
         return ""
 
-    def _save_to_memory(self, user_input: str, agent_response: str) -> None:
+    async def _save_to_memory(self, user_input: str, agent_response: str) -> None:
         """
-        Save conversation to long-term memory
+        Save conversation to hybrid long-term memory (mem0 + Graphiti)
 
         Args:
             user_input: User message
@@ -2055,10 +1801,10 @@ class PydanticAIAgent:
             return
 
         try:
-            logger.info(f"Attempting to save conversation to memory...")
+            logger.info(f"Attempting to save conversation to hybrid memory...")
 
-            # Save the conversation turn using the custom extraction prompt from memory config
-            result = self.memory.add(
+            # Save to both mem0 (vectors) and Graphiti (graph)
+            result = await self.memory.add(
                 messages=[
                     {"role": "user", "content": user_input},
                     {"role": "assistant", "content": agent_response}
@@ -2068,15 +1814,15 @@ class PydanticAIAgent:
                 metadata=self.session_metadata,
                 infer=True,  # Enable LLM-based fact extraction with custom prompt
             )
-            logger.info(f"Conversation saved to memory. Result: {result}")
+            logger.info(f"Conversation saved to hybrid memory. mem0 result: {result.get('mem0')}, graphiti result: {result.get('graphiti')}")
 
         except Exception as e:
             logger.error(f"Error saving to memory: {e}", exc_info=True)
 
     async def _save_to_memory_async(self, user_input: str, agent_response: str) -> None:
         """
-        Async wrapper for saving conversation to long-term memory.
-        Runs memory.add() in a background thread to avoid blocking.
+        Async method for saving conversation to hybrid memory (mem0 + Graphiti).
+        Called as a background task to avoid blocking the response stream.
 
         Args:
             user_input: User message
@@ -2087,51 +1833,42 @@ class PydanticAIAgent:
             return
 
         try:
-            logger.info(f"Saving conversation to memory (async background task)...")
-            logger.info(f"Memory enable_graph: {self.memory.enable_graph}")
-            if hasattr(self.memory, 'graph') and self.memory.graph:
-                logger.info(f"Memory graph object exists: {type(self.memory.graph)}")
+            logger.info(f"Saving conversation to hybrid memory (async background task)...")
 
-            # Run the blocking memory.add() call in a thread pool executor
-            # to prevent blocking the event loop
-            #
+            # Directly await hybrid memory's async add() method
             # Per mem0 documentation, we pass the full conversation (both user and assistant messages)
             # Our custom_prompt should filter out extraction from assistant responses
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,  # Use default executor
-                lambda: self.memory.add(
-                    messages=[
-                        {"role": "user", "content": user_input},
-                        {"role": "assistant", "content": agent_response}
-                    ],
-                    user_id=config.MEM0_USER_ID,
-                    agent_id=config.MEM0_AGENT_ID,
-                    metadata=self.session_metadata,
-                    infer=True,  # Enable LLM-based fact extraction with custom prompt
-                )
+            result = await self.memory.add(
+                messages=[
+                    {"role": "user", "content": user_input},
+                    {"role": "assistant", "content": agent_response}
+                ],
+                user_id=config.MEM0_USER_ID,
+                agent_id=config.MEM0_AGENT_ID,
+                metadata=self.session_metadata,
+                infer=True,  # Enable LLM-based fact extraction with custom prompt
             )
 
-            logger.info(f"Memory add result: {result}")
+            logger.info(f"Hybrid memory add result: {result}")
 
-            # Log graph extraction results
+            # Log results from both systems
             if isinstance(result, dict):
-                if 'results' in result:
-                    logger.info(f"Vector store results: {len(result['results'])} memories")
-                if 'relations' in result:
-                    logger.info(f"Graph store relations: {result['relations']}")
-                    if result['relations']:
-                        if 'added_entities' in result['relations']:
-                            logger.info(f"Added entities: {result['relations']['added_entities']}")
-                        if 'deleted_entities' in result['relations']:
-                            logger.info(f"Deleted entities: {result['relations']['deleted_entities']}")
+                # mem0 results (vector store)
+                if 'mem0' in result and result['mem0']:
+                    mem0_result = result['mem0']
+                    if isinstance(mem0_result, dict) and 'results' in mem0_result:
+                        logger.info(f"mem0 vector store: {len(mem0_result['results'])} memories")
                     else:
-                        logger.warning("Graph relations returned empty/None - graph extraction may have failed")
+                        logger.info(f"mem0 result: {mem0_result}")
 
-            logger.info(f"Conversation saved to memory successfully (background task completed)")
+                # Graphiti results (knowledge graph)
+                if 'graphiti' in result and result['graphiti']:
+                    logger.info(f"Graphiti graph result: {result['graphiti']}")
+
+            logger.info(f"Conversation saved to hybrid memory successfully (background task completed)")
 
         except Exception as e:
-            logger.error(f"Error saving to memory (async): {e}", exc_info=True)
+            logger.error(f"Error saving to hybrid memory (async): {e}", exc_info=True)
 
     # def _validate_with_guardrails(self, text: str) -> bool:
     #     """
@@ -2172,14 +1909,14 @@ class PydanticAIAgent:
         # if not self._validate_with_guardrails(user_input):
         #     return "I'm sorry, but I cannot process that message. Please rephrase your request."
 
-        # Get user's timezone from memory
-        user_timezone = self._get_user_timezone()
+        # Get user's timezone from memory (async)
+        user_timezone = await self._get_user_timezone()
 
         # Get current time context (fresh for this message, in user's timezone)
         time_context = self._get_current_time_context(user_timezone)
 
-        # Get memory context
-        memory_context = self._get_memory_context(user_input)
+        # Get memory context from hybrid memory (async)
+        memory_context = await self._get_memory_context(user_input)
 
         # Prepare the full message with context
         full_message = user_input
@@ -2187,6 +1924,9 @@ class PydanticAIAgent:
             context_parts = [time_context, memory_context]
             combined_context = "".join([ctx for ctx in context_parts if ctx])
             full_message = f"{combined_context}\n{user_input}"
+            logger.info(f"Full message with context (length={len(full_message)}): {full_message[:400]}...")
+        else:
+            logger.warning("No context added to message - both time_context and memory_context are empty")
 
         # Get response from agent
         try:
@@ -2206,8 +1946,8 @@ class PydanticAIAgent:
             # if not self._validate_with_guardrails(response):
             #     response = "I apologize, but I need to rephrase my response. Let me try again."
 
-            # Save to memory
-            self._save_to_memory(user_input, response)
+            # Save to hybrid memory (async)
+            await self._save_to_memory(user_input, response)
 
             return response
 
@@ -2239,14 +1979,14 @@ class PydanticAIAgent:
             #     yield "I'm sorry, but I cannot process that message."
             #     return
 
-            # Get user's timezone - prioritize location_context, fallback to memory
-            user_timezone = self._get_user_timezone(location_context)
+            # Get user's timezone - prioritize location_context, fallback to memory (async)
+            user_timezone = await self._get_user_timezone(location_context)
 
             # Get current time context (fresh for this message, in user's timezone)
             time_context = self._get_current_time_context(user_timezone)
 
-            # Get memory context
-            memory_context = self._get_memory_context(user_input)
+            # Get memory context from hybrid memory (async)
+            memory_context = await self._get_memory_context(user_input)
 
             # Prepare the full message with context
             full_message = user_input
@@ -2254,6 +1994,9 @@ class PydanticAIAgent:
                 context_parts = [time_context, memory_context]
                 combined_context = "".join([ctx for ctx in context_parts if ctx])
                 full_message = f"{combined_context}\n{user_input}"
+                logger.info(f"[STREAM] Full message with context (length={len(full_message)}): {full_message[:400]}...")
+            else:
+                logger.warning("[STREAM] No context added to message - both time_context and memory_context are empty")
 
             logger.info(f"Streaming response for message: {user_input[:50]}...")
 

@@ -116,7 +116,15 @@ async def startup_event():
     try:
         logger.info("Initializing Pydantic AI Agent...")
         agent = PydanticAIAgent()
-        logger.info("Agent initialized successfully!")
+        logger.info("Agent created successfully!")
+
+        # Initialize hybrid memory (async)
+        if agent and agent.memory:
+            logger.info("Initializing hybrid memory system...")
+            await agent.initialize_memory_async()
+            logger.info("Hybrid memory initialized!")
+
+        logger.info("Agent fully initialized!")
     except Exception as e:
         logger.error(f"Failed to initialize agent: {e}")
         # Continue startup but agent will be unavailable
@@ -128,6 +136,15 @@ async def shutdown_event():
     """Cleanup on application shutdown"""
     global agent
     logger.info("Shutting down API...")
+
+    # Close hybrid memory connections
+    if agent and agent.memory:
+        try:
+            await agent.memory.close()
+            logger.info("Hybrid memory connections closed")
+        except Exception as e:
+            logger.error(f"Error closing hybrid memory: {e}")
+
     agent = None
 
 
