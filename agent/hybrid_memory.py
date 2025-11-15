@@ -12,6 +12,7 @@ This provides best-of-both-worlds memory:
 
 import asyncio
 import logging
+import sys
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
@@ -22,6 +23,10 @@ from graphiti_core.llm_client import OpenAIClient
 from graphiti_core.llm_client.config import LLMConfig
 from graphiti_core.embedder import OpenAIEmbedder
 from graphiti_core.embedder.openai import OpenAIEmbedderConfig
+
+# Import contradiction handler
+sys.path.insert(0, '/tmp')
+from contradiction_handler import ContradictionHandler
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +67,7 @@ class HybridMemoryManager:
         # Will be initialized asynchronously
         self.mem0: Optional[Memory] = None
         self.graphiti: Optional[Graphiti] = None
+        self.contradiction_handler: Optional[ContradictionHandler] = None
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -127,6 +133,10 @@ class HybridMemoryManager:
             logger.info("Building Graphiti indices and constraints...")
             await self.graphiti.build_indices_and_constraints()
             logger.info("Graphiti initialized successfully")
+
+            # Initialize contradiction handler
+            self.contradiction_handler = ContradictionHandler(self.graphiti)
+            logger.info("Contradiction handler initialized")
 
             self._initialized = True
             logger.info("Hybrid memory manager fully initialized!")
@@ -198,15 +208,33 @@ class HybridMemoryManager:
             ])
 
             episode_name = f"Conversation_{user_id}_{datetime.now().isoformat()}"
+            reference_time = datetime.now()
             graphiti_result = await self.graphiti.add_episode(
                 name=episode_name,
                 episode_body=conversation_text,
                 source_description=f"Conversation with user {user_id}",
                 source=EpisodeType.message,  # Use 'source' parameter with EpisodeType
-                reference_time=datetime.now()
+                reference_time=reference_time
             )
             results['graphiti'] = graphiti_result
             logger.info(f"Graphiti add result: {graphiti_result}")
+
+            # Check for contradictions and invalidate outdated facts
+            # Only check user messages for negations/corrections
+            for msg in messages:
+                if msg.get('role') == 'user':
+                    user_message = msg.get('content', '')
+                    negation = self.contradiction_handler.detect_negation(user_message)
+
+                    if negation:
+                        logger.info(f"Detected negation/correction: '{negation}'")
+                        invalidated_count = await self.contradiction_handler.invalidate_contradicting_facts(
+                            negated_topic=negation,
+                            user_id=user_id,
+                            reference_time=reference_time
+                        )
+                        results['invalidated_facts'] = invalidated_count
+                        logger.info(f"Invalidated {invalidated_count} contradicting facts")
 
             return results
 
