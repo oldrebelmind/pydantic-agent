@@ -25,7 +25,6 @@ from graphiti_core.embedder import OpenAIEmbedder
 from graphiti_core.embedder.openai import OpenAIEmbedderConfig
 
 # Import contradiction handler
-sys.path.insert(0, '/tmp')
 from contradiction_handler import ContradictionHandler
 
 logger = logging.getLogger(__name__)
@@ -175,6 +174,51 @@ class HybridMemoryManager:
         }
 
         try:
+            # WORKAROUND for mem0 bug: Delete conflicting memories before adding corrections
+            # mem0's fact extraction includes old memory context, causing it to extract
+            # old values instead of new ones when users correct information.
+            # We detect corrections and pre-emptively delete related memories.
+            for msg in messages:
+                if msg.get('role') == 'user':
+                    user_message = msg.get('content', '')
+                    negation = self.contradiction_handler.detect_negation(user_message)
+
+                    if negation:
+                        logger.info(f"Detected correction in message, deleting related mem0 memories: '{negation}'")
+
+                        # Extract keywords from the correction
+                        keywords = self.contradiction_handler.extract_topic_keywords(negation)
+
+                        if keywords:
+                            # Search mem0 for memories related to these keywords
+                            search_query = " ".join(keywords[:3])  # Use top 3 keywords
+                            logger.info(f"Searching mem0 for memories to delete with query: '{search_query}'")
+
+                            related_memories = self.mem0.search(
+                                query=search_query,
+                                user_id=user_id,
+                                limit=10
+                            )
+
+                            # Delete related memories
+                            deleted_count = 0
+                            if related_memories and 'results' in related_memories:
+                                for memory in related_memories['results']:
+                                    memory_id = memory.get('id')
+                                    memory_text = memory.get('memory', '')
+
+                                    # Check if this memory is about the topic being corrected
+                                    memory_lower = memory_text.lower()
+                                    if any(keyword.lower() in memory_lower for keyword in keywords):
+                                        try:
+                                            self.mem0.delete(memory_id=memory_id)
+                                            logger.info(f"Deleted mem0 memory: {memory_text}")
+                                            deleted_count += 1
+                                        except Exception as e:
+                                            logger.warning(f"Failed to delete memory {memory_id}: {e}")
+
+                            logger.info(f"Deleted {deleted_count} conflicting mem0 memories")
+
             # Add to mem0 (vector store)
             logger.info("Adding conversation to mem0 (vector store)...")
             logger.info(f"Messages to add: {messages}")
@@ -302,8 +346,14 @@ class HybridMemoryManager:
                     logger.info(f"Added vector context: {mem_text}")
 
             # Add graph results - format edge relationships
+            # IMPORTANT: Only include ACTIVE facts (where invalid_at is None)
             logger.info(f"Processing {len(results['graph_results'])} graph results")
             for i, edge in enumerate(results['graph_results']):
+                # Skip invalid facts
+                if hasattr(edge, 'invalid_at') and edge.invalid_at is not None:
+                    logger.info(f"Skipping INVALID graph fact: {edge.fact if hasattr(edge, 'fact') else 'unknown'}")
+                    continue
+
                 logger.info(f"Graph result {i} type: {type(edge)}, has fact: {hasattr(edge, 'fact')}, has name: {hasattr(edge, 'name')}")
                 # Graphiti edges have fact/name that describes the relationship
                 if hasattr(edge, 'fact'):
