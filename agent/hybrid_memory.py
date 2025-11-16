@@ -69,6 +69,9 @@ class HybridMemoryManager:
         self.contradiction_handler: Optional[ContradictionHandler] = None
         self._initialized = False
 
+        # Store last user message for context enhancement
+        self._last_user_message: Optional[str] = None
+
     async def initialize(self) -> None:
         """Initialize both mem0 and Graphiti asynchronously."""
         if self._initialized:
@@ -178,7 +181,7 @@ class HybridMemoryManager:
             # mem0's fact extraction includes old memory context, causing it to extract
             # old values instead of new ones when users correct information.
             # We detect corrections and pre-emptively delete related memories.
-            for msg in messages:
+            for i, msg in enumerate(messages):
                 if msg.get('role') == 'user':
                     user_message = msg.get('content', '')
                     negation = self.contradiction_handler.detect_negation(user_message)
@@ -189,9 +192,23 @@ class HybridMemoryManager:
                         # Extract keywords from the correction
                         keywords = self.contradiction_handler.extract_topic_keywords(negation)
 
+                        # ALSO extract keywords from previous user message for context (e.g., company name)
+                        # Look back through messages to find the previous user message
+                        for j in range(i - 1, -1, -1):
+                            prev_msg = messages[j]
+                            if prev_msg.get('role') == 'user':
+                                prev_keywords = self.contradiction_handler.extract_topic_keywords(prev_msg.get('content', ''))
+                                # Add company names from previous context
+                                for keyword in prev_keywords:
+                                    if keyword not in keywords:
+                                        keywords.append(keyword)
+                                logger.info(f"Added context keywords from previous message: {prev_keywords}")
+                                break
+
                         if keywords:
                             # Search mem0 for memories related to these keywords
-                            search_query = " ".join(keywords[:3])  # Use top 3 keywords
+                            # Use ALL keywords to be more specific
+                            search_query = " ".join(keywords)
                             logger.info(f"Searching mem0 for memories to delete with query: '{search_query}'")
 
                             related_memories = self.mem0.search(
@@ -209,7 +226,8 @@ class HybridMemoryManager:
 
                                     # Check if this memory is about the topic being corrected
                                     memory_lower = memory_text.lower()
-                                    if any(keyword.lower() in memory_lower for keyword in keywords):
+                                    # ALL keywords must match (more specific)
+                                    if all(keyword.lower() in memory_lower for keyword in keywords):
                                         try:
                                             self.mem0.delete(memory_id=memory_id)
                                             logger.info(f"Deleted mem0 memory: {memory_text}")
@@ -224,8 +242,65 @@ class HybridMemoryManager:
             logger.info(f"Messages to add: {messages}")
             logger.info(f"user_id: {user_id}, agent_id: {agent_id}, infer: {infer}")
 
+            # ENHANCEMENT: Enrich correction messages with context from previous messages
+            # This helps mem0's fact extraction include company names and other context
+            enhanced_messages = []
+            for i, msg in enumerate(messages):
+                if msg.get('role') == 'user':
+                    user_message = msg.get('content', '')
+                    negation = self.contradiction_handler.detect_negation(user_message)
+
+                    # If this is a correction, add context from previous user message
+                    if negation:
+                        # Look for previous user message in the messages array first
+                        prev_context = None
+                        for j in range(i - 1, -1, -1):
+                            prev_msg = messages[j]
+                            if prev_msg.get('role') == 'user':
+                                prev_context = prev_msg.get('content', '')
+                                break
+
+                        # If no previous message in array, use stored last message
+                        if not prev_context and self._last_user_message:
+                            prev_context = self._last_user_message
+                            logger.info(f"Using stored last user message for context: '{prev_context}'")
+
+                        if prev_context:
+                            # Extract company/entity names from previous context
+                            import re
+                            # Look for "at/for/with [Company]" pattern
+                            company_matches = re.findall(r'(?:at|for|with)\s+([A-Z][a-zA-Z]+)', prev_context)
+
+                            if company_matches:
+                                company = company_matches[0]
+                                # Check if current message already mentions the company
+                                if company.lower() not in user_message.lower():
+                                    # Enhance the message by injecting company context
+                                    # Look for role-related phrases
+                                    role_pattern = r'(my role|my position|my job|my title|i work|i am|i\'m)\s+(?:is|as)?\s*(.+)'
+                                    role_match = re.search(role_pattern, user_message.lower())
+
+                                    if role_match:
+                                        # Reconstruct message with company context using re.sub for case-insensitive replacement
+                                        def enhance_role(match):
+                                            return f"{match.group(1)} at {company} is {match.group(2)}"
+
+                                        enhanced_msg = re.sub(
+                                            role_pattern,
+                                            enhance_role,
+                                            user_message,
+                                            count=1,
+                                            flags=re.IGNORECASE
+                                        )
+                                        logger.info(f"Enhanced correction message with context: '{user_message}' -> '{enhanced_msg}'")
+                                        enhanced_messages.append({'role': 'user', 'content': enhanced_msg})
+                                        continue
+
+                # No enhancement needed, use original message
+                enhanced_messages.append(msg)
+
             mem0_result = self.mem0.add(
-                messages=messages,
+                messages=enhanced_messages,
                 user_id=user_id,
                 agent_id=agent_id,
                 metadata=metadata,
@@ -279,6 +354,13 @@ class HybridMemoryManager:
                         )
                         results['invalidated_facts'] = invalidated_count
                         logger.info(f"Invalidated {invalidated_count} contradicting facts")
+
+            # Store the last user message for future context enhancement
+            for msg in reversed(messages):
+                if msg.get('role') == 'user':
+                    self._last_user_message = msg.get('content', '')
+                    logger.info(f"Stored last user message for context: '{self._last_user_message}'")
+                    break
 
             return results
 
