@@ -994,6 +994,9 @@ class PydanticAIAgent:
             system_prompt=system_prompt,
         )
 
+        # Register weather tool
+        self._register_tools()
+
         # Initialize Mem0 for long-term memory
         self.memory = self._initialize_memory()
 
@@ -1008,6 +1011,30 @@ class PydanticAIAgent:
         self.session_metadata = create_conversation_metadata(config.MEM0_USER_ID)
 
         logger.info("Agent initialization complete!")
+
+    def _register_tools(self):
+        """Register tools with the Pydantic AI agent"""
+        from tools import get_current_weather_tool
+
+        # Store reference to self for closure
+        agent_instance = self
+
+        @self.agent.tool
+        async def get_current_weather(ctx) -> str:
+            """
+            Get current weather and short-term forecast for the user's location.
+
+            Use this when the user asks about:
+            - Current weather conditions
+            - Temperature
+            - What to wear
+            - Upcoming weather in next 12-24 hours
+            """
+            # Get location from agent instance's current_location attribute
+            location = getattr(agent_instance, 'current_location', None)
+            return await get_current_weather_tool(location)
+
+        logger.info("Weather tool registered")
 
     def _initialize_memory(self) -> Optional[HybridMemoryManager]:
         """
@@ -1582,6 +1609,9 @@ class PydanticAIAgent:
         try:
             # Sanitize input
             user_input = sanitize_input(user_input)
+
+            # Store location context for tools to access
+            self.current_location = location_context
 
             # Validate input with guardrails - disabled for now
             # if not self._validate_with_guardrails(user_input):
