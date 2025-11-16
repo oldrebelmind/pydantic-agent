@@ -43,6 +43,28 @@ agent: PydanticAIAgent | None = None
 
 
 # Request/Response Models
+class LocationContext(BaseModel):
+    """User's location context from IP geolocation"""
+    city: str | None = Field(None, description="City name")
+    state: str | None = Field(None, description="State/Province")
+    country: str | None = Field(None, description="Country name")
+    timezone: str | None = Field(None, description="IANA timezone (e.g., 'America/New_York')")
+    latitude: float | None = Field(None, description="Latitude coordinate")
+    longitude: float | None = Field(None, description="Longitude coordinate")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "city": "Indianapolis",
+                "state": "Indiana",
+                "country": "United States",
+                "timezone": "America/Indiana/Indianapolis",
+                "latitude": 39.7684,
+                "longitude": -86.1581
+            }
+        }
+
+
 class ChatRequest(BaseModel):
     """Chat request model"""
     message: str = Field(
@@ -51,11 +73,23 @@ class ChatRequest(BaseModel):
         max_length=2000,
         description="User's message to the AI agent"
     )
+    location: LocationContext | None = Field(
+        None,
+        description="Optional location context from IP geolocation"
+    )
 
     class Config:
         json_schema_extra = {
             "example": {
-                "message": "What is the capital of France?"
+                "message": "What is the capital of France?",
+                "location": {
+                    "city": "Indianapolis",
+                    "state": "Indiana",
+                    "country": "United States",
+                    "timezone": "America/Indiana/Indianapolis",
+                    "latitude": 39.7684,
+                    "longitude": -86.1581
+                }
             }
         }
 
@@ -82,7 +116,15 @@ async def startup_event():
     try:
         logger.info("Initializing Pydantic AI Agent...")
         agent = PydanticAIAgent()
-        logger.info("Agent initialized successfully!")
+        logger.info("Agent created successfully!")
+
+        # Initialize hybrid memory (async)
+        if agent and agent.memory:
+            logger.info("Initializing hybrid memory system...")
+            await agent.initialize_memory_async()
+            logger.info("Hybrid memory initialized!")
+
+        logger.info("Agent fully initialized!")
     except Exception as e:
         logger.error(f"Failed to initialize agent: {e}")
         # Continue startup but agent will be unavailable
@@ -94,6 +136,15 @@ async def shutdown_event():
     """Cleanup on application shutdown"""
     global agent
     logger.info("Shutting down API...")
+
+    # Close hybrid memory connections
+    if agent and agent.memory:
+        try:
+            await agent.memory.close()
+            logger.info("Hybrid memory connections closed")
+        except Exception as e:
+            logger.error(f"Error closing hybrid memory: {e}")
+
     agent = None
 
 
@@ -161,10 +212,25 @@ async def chat_stream(request: ChatRequest):
         Yields SSE-formatted events containing tokens, completion signal, or errors.
         """
         try:
-            logger.info(f"Processing message: {request.message[:50]}...")
+            # Log message with location context if available
+            if request.location:
+                logger.info(
+                    f"Processing message: {request.message[:50]}... "
+                    f"[Location: {request.location.city}, {request.location.state} - {request.location.timezone}]"
+                )
+            else:
+                logger.info(f"Processing message: {request.message[:50]}...")
 
-            # Stream response from agent
-            async for token in agent.process_message_stream(request.message):
+            # Convert Pydantic LocationContext to dict for agent
+            location_dict = None
+            if request.location:
+                location_dict = request.location.model_dump()
+
+            # Stream response from agent with location context
+            async for token in agent.process_message_stream(
+                user_input=request.message,
+                location_context=location_dict
+            ):
                 # Format as SSE event
                 event_data = json.dumps({'token': token})
                 yield f"data: {event_data}\n\n"

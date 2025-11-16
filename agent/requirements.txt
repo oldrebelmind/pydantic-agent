@@ -7,13 +7,16 @@ httpx>=0.27.2
 openai>=1.54.4
 
 # Memory Management
-# Install from GitHub main branch to get latest bug fixes not yet released to PyPI
-git+https://github.com/mem0ai/mem0.git@main
-pymilvus>=2.3.0
+# Using stable PyPI release (1.0.0) with pgvector for PostgreSQL vector storage
+mem0ai==1.0.0
+psycopg[pool]>=3.1.0
 ollama>=0.1.0
 neo4j>=5.14.0
 langchain-neo4j>=0.1.0
 rank-bm25>=0.2.2
+
+# Knowledge Graph Memory (Graphiti)
+graphiti-core>=0.5.0
 
 # Observability
 langfuse>=3.8.1
